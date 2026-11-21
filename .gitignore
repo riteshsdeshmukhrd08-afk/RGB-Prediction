@@ -1,0 +1,21 @@
+# secrets and local settings: never commit these
+.env
+backend/.env
+frontend/.env
+.vscode/
+
+# dependencies and build output
+backend/venv/
+frontend/node_modules/
+frontend/dist/
+
+# generated at run time
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/data/
+backend/model/
+*.tmp
+
+# screenshots (not part of the source)
+frontend/screenshots/

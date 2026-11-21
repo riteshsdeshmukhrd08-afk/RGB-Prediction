@@ -1,0 +1,14 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+pymongo==4.9.2
+cloudinary==1.41.0
+PyMuPDF==1.25.1
+pandas==2.2.3
+numpy==2.1.3
+openpyxl==3.1.5
+pillow==11.0.0
+scikit-image==0.25.0
+python-dotenv==1.0.1
+# Optional: lets the server read HEIC/HEIF photos (iPhone). Remove this line if it fails to install.
+pillow-heif==0.21.0
