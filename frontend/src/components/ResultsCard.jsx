@@ -1,4 +1,5 @@
 import { downloadUrl } from "../api.js";
+import { downloadCsv } from "../csvExport.js";
 import { DownloadIcon, TableIcon } from "./Icons.jsx";
 
 const fmt = (v) => (v == null ? "–" : Number(v).toFixed(2));
@@ -32,7 +33,8 @@ const COLUMNS = [
   { cls: "c-image", label: "Image", cell: (r) => (r.image_url ? <a href={r.image_url} target="_blank" rel="noreferrer">Open</a> : "") },
 ];
 
-export default function ResultsCard({ jobId, job, results, hasModel }) {
+export default function ResultsCard({ jobId, job, results, hasModel, files = [] }) {
+  const many = files.length > 1;                       // one backend job per uploaded file
   const failed = results.filter((r) => r.status === "failed").length;
   const flagged = results.filter((r) => r.status !== "failed" && r.flags).length;
   const running = job && (job.status === "queued" || job.status === "processing");
@@ -45,8 +47,11 @@ export default function ResultsCard({ jobId, job, results, hasModel }) {
       <div className="panel-head">
         <div className="title-group">
           <h2>Results</h2>
-          {jobId && <span className="muted mono job-id" title={jobId}>job {jobId.slice(0, 8)}{jobId.includes(",") ? ` +${jobId.split(",").length - 1}` : ""}</span>}
+          {jobId && <span className="muted mono job-id" title={jobId}>{many ? `${files.length} jobs` : `job ${jobId.slice(0, 8)}`}</span>}
         </div>
+        {many && finished && results.length > 0 && (
+          <button onClick={() => downloadCsv(results)}><DownloadIcon width={16} height={16} /> Download all CSV</button>
+        )}
       </div>
 
       {!job && (
@@ -85,16 +90,26 @@ export default function ResultsCard({ jobId, job, results, hasModel }) {
         </div>
       )}
 
-      {finished && results.length > 0 && (
+      {finished && results.length > 0 && !many && (
         <div className="downloads">
-          {jobId.split(",").map((id, n, all) => {
-            const part = all.length > 1 ? ` (file ${n + 1})` : "";   // one backend job per uploaded file
-            return [
-              <a className="button" key={id + "c"} href={downloadUrl(id, "csv")}><DownloadIcon width={16} height={16} /> Download CSV{part}</a>,
-              <a className="button" key={id + "x"} href={downloadUrl(id, "xlsx")}><DownloadIcon width={16} height={16} /> Download XLSX{part}</a>,
-            ];
-          })}
+          <a className="button" href={downloadUrl(jobId, "csv")}><DownloadIcon width={16} height={16} /> Download CSV</a>
+          <a className="button" href={downloadUrl(jobId, "xlsx")}><DownloadIcon width={16} height={16} /> Download XLSX</a>
         </div>
+      )}
+      {finished && many && (
+        <details className="per-file">
+          <summary>Downloads per file ({files.length})</summary>
+          <ul>
+            {files.map((f) => (
+              <li key={f.id}>
+                <span className="name mono" title={f.name}>{f.name}</span>
+                <span className={"fstatus fs-" + f.status}>{f.status}</span>
+                <a className="button small" href={downloadUrl(f.id, "csv")} aria-label={`CSV for ${f.name}`}>CSV</a>
+                <a className="button small" href={downloadUrl(f.id, "xlsx")} aria-label={`XLSX for ${f.name}`}>XLSX</a>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </section>
   );

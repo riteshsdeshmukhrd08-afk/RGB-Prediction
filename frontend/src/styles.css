@@ -43,12 +43,12 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
 .banner strong { color: var(--bad); }
 .banner .muted { flex: 1; min-width: 200px; font-size: 12px; overflow-wrap: anywhere; }
 
-.columns { flex: 1; min-height: 0; display: grid; gap: 24px; grid-template-columns: minmax(380px, 32fr) minmax(0, 68fr);
+.columns { flex: 1; min-height: 0; display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   grid-template-rows: minmax(0, 1fr); align-items: stretch; margin-bottom: 24px; }
-@media (max-width: 999px) {
+@media (max-width: 960px) {
   .stage { height: auto; min-height: 0; }
   .columns { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; gap: 24px; }
-  .columns > .card { min-height: 560px; height: auto; }
+  .columns > .card { min-height: 0; height: auto; }
 }
 
 /* ===== Panels ===== */
@@ -92,19 +92,24 @@ a.button { color: var(--text); }
 .drop-icon { color: var(--muted); transition: color var(--t); }
 .drop.over { border-color: var(--accent); background: rgba(45, 212, 191, .08); }
 .drop.over .drop-icon { color: var(--accent); }
-.input-card > .drop { flex: 1 1 auto; min-height: 320px; }
+.input-card > .drop { flex: 1 1 auto; min-height: 200px; }
 
 /* ===== Input panel ===== */
 .input-card { min-height: 0; height: 100%; display: flex; flex-direction: column; }
-.file-area { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; margin-top: 16px; }
+.file-area { flex: 0 1 auto; min-height: 120px; display: flex; flex-direction: column; margin-top: 16px; }
 .file-area > .row { flex: none; margin: 0 0 8px; font-size: 14px; }
-.files { max-height: 240px; overflow-y: auto; list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.files { max-height: min(300px, 38vh); min-height: 0; overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: 8px; list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
 .files li { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); transition: background var(--t); }
 .files li:last-child { border-bottom: 0; }
+.files li { min-width: 0; }
 .files li:hover { background: rgba(255, 255, 255, .04); }
-.files img, .thumb-label { width: 56px; height: 56px; flex: none; border-radius: 6px; object-fit: cover; background: var(--panel-2); }
+.files img, .thumb-label { width: 44px; height: 44px; flex: none; border-radius: 6px; object-fit: cover; background: var(--panel-2); }
 .thumb-label { display: grid; place-items: center; font: 11px var(--mono); color: var(--muted); text-transform: uppercase; }
 .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.fstatus { flex: none; font-size: 11px; line-height: 18px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.fs-resizing, .fs-uploading, .fs-processing { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.fs-done { color: var(--ok); border-color: rgba(74, 222, 128, .35); }
+.fs-failed { color: var(--bad); border-color: rgba(248, 113, 113, .4); }
 .size { flex: none; color: var(--muted); font-size: 12px; }
 .remove { flex: none; min-height: 32px; width: 32px; padding: 0; color: var(--muted); opacity: 0; }
 .files li:hover .remove, .remove:focus-visible { opacity: 1; }
@@ -116,7 +121,9 @@ a.button { color: var(--text); }
 .run-area button.run, .run-area button.block, button.block { width: 100%; min-height: 48px; font-size: 16px; display: flex; align-items: center; justify-content: center; }
 .reason { margin: 8px 0 0; text-align: center; width: 100%; }
 .bar { height: 8px; background: var(--border); border-radius: 999px; overflow: hidden; margin: 8px 0; flex: none; }
-.bar.thin { height: 3px; margin: 0 0 12px; }
+.bar.thin { height: 6px; margin: 0; }
+/* the progress bar has a slot of its own: its height is reserved, so it can never overlap the list or the button */
+.progress-slot { flex: none; height: 6px; margin: 0 0 10px; }
 .bar > div { height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s; }
 .bar.indeterminate > div { width: 30%; animation: slide 1.2s infinite ease-in-out; }
 @keyframes slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
@@ -152,6 +159,14 @@ a.button { color: var(--text); }
 /* the table area is as tall as its rows, and scrolls (both ways) inside itself when it needs more room */
 .results-card .table-wrap { flex: 0 1 auto; min-height: 0; max-height: none; margin: 0; overflow: auto; overscroll-behavior: contain;
   scrollbar-width: thin; scrollbar-color: #3a4756 transparent; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.results-card .table-wrap { min-height: 120px; }
+.per-file { flex: none; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 13px; }
+.per-file > summary { cursor: pointer; padding: 10px 12px; color: var(--muted); }
+.per-file[open] > summary { border-bottom: 1px solid var(--border); }
+.per-file ul { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; overscroll-behavior: contain; }
+.per-file li { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); min-width: 0; }
+.per-file li:last-child { border-bottom: 0; }
+.button.small { min-height: 26px; padding: 0 10px; font-size: 12px; flex: none; }
 .downloads { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: auto; }
 
 /* ===== Tables ===== */
@@ -232,7 +247,7 @@ tr.chosen td { color: var(--accent); font-weight: 600; background: rgba(45, 212,
 .mappings { margin: 0 0 8px; padding-left: 20px; color: var(--muted); font-size: 12px; }
 
 /* ===== Smaller screens: stacked panels, the table still scrolls inside its own area ===== */
-@media (max-width: 999px) {
+@media (max-width: 960px) {
   .results-card .table-wrap { max-height: 70vh; }
 }
 @media (max-width: 599px) {

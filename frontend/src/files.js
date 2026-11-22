@@ -1,6 +1,8 @@
 // Helpers for picking files and folders. Nothing is filtered by type: the backend decides.
 
-export const itemFromFile = (file) => ({ file, path: file.webkitRelativePath || file.name });
+let nextId = 1;
+export const newId = () => nextId++;       // a stable id per selected file; run state is kept by id
+export const itemFromFile = (file) => ({ id: newId(), file, path: file.webkitRelativePath || file.name });
 
 // Browsers can only preview some image types; for the others we show a plain label.
 export const canPreview = (file) => /^image\/(png|jpe?g|webp|gif|bmp|avif|svg\+xml)$/i.test(file.type);
@@ -21,7 +23,7 @@ export async function itemsFromDrop(dataTransfer) {
   async function walk(entry, prefix) {
     if (entry.isFile) {
       const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
-      out.push({ file, path: prefix + entry.name });
+      out.push({ id: newId(), file, path: prefix + entry.name });
     } else if (entry.isDirectory) {
       const reader = entry.createReader();
       let batch;

@@ -21,12 +21,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from PIL import Image
 from pymongo import DESCENDING
-from pymongo.errors import ConnectionFailure, OperationFailure, ServerSelectionTimeoutError
+from pymongo.errors import ConnectionFailure, DuplicateKeyError, OperationFailure, ServerSelectionTimeoutError
 from starlette.background import BackgroundTask
 
 import config
@@ -71,7 +71,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=config.FRONTEND_ORIGINS,
     allow_methods=["*"],
-    allow_headers=["*"],
+    # Idempotency-Key is not a CORS-safelisted header, so the browser sends a preflight and needs it listed.
+    allow_headers=["Accept", "Accept-Language", "Content-Language", "Content-Type", "Idempotency-Key"],
     expose_headers=["Content-Disposition"],
 )
 
@@ -102,6 +103,28 @@ def require_db():
     if not db.is_configured():
         raise HTTPException(503, "database is not configured (set MONGODB_URI in .env)")
     db.ensure_indexes()
+
+
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
+
+
+def parse_idempotency_key(value):
+    """None when the header is absent; the key in lower case when it is a UUID; otherwise a 400."""
+    if value is None:
+        return None
+    if len(value) > 64 or not UUID_RE.match(value):
+        raise HTTPException(400, "Idempotency-Key must be a UUID (at most 64 characters).")
+    return value.lower()
+
+
+def existing_job_response(key):
+    """The answer for a repeated request: the job that this key already created (HTTP 200), or None."""
+    job = db.jobs().find_one({"idempotency_key": key})
+    if job is None:
+        return None
+    return JSONResponse({"job_id": job["_id"], "status": job["status"],
+                         "accepted": job.get("accepted", job["total"]), "skipped": job.get("skipped", []),
+                         "duplicate": True}, status_code=200)
 
 
 def sanitize_filename(name):
@@ -182,7 +205,7 @@ def job_json(job):
     return {
         "job_id": job["_id"], "status": job["status"], "total": job["total"],
         "processed": job["processed"], "error": job.get("error"),
-        "skipped": job.get("skipped", []),
+        "skipped": job.get("skipped", []), "idempotency_key": job.get("idempotency_key"),
     }
 
 
@@ -288,8 +311,14 @@ def health():
 
 
 @app.post("/api/jobs", status_code=202)
-def create_job(background_tasks: BackgroundTasks, files: list[UploadFile] = File(...)):
+def create_job(background_tasks: BackgroundTasks, files: list[UploadFile] = File(...),
+               idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+    key = parse_idempotency_key(idempotency_key)
     require_db()
+    if key:                                             # a retry of a request that already created its job
+        again = existing_job_response(key)
+        if again is not None:
+            return again
     model, _ = concentration.current()                  # no model is fine: R, G, B are always returned
     if len(files) > config.MAX_FILES:
         raise HTTPException(400, f"Too many files: {len(files)} (limit is {config.MAX_FILES}).")
@@ -300,11 +329,20 @@ def create_job(background_tasks: BackgroundTasks, files: list[UploadFile] = File
         items, accepted, skipped = save_and_classify(files, work_dir)
         if not items:
             raise HTTPException(422, "No supported image or PDF files were found.")
-        db.jobs().insert_one({
+        doc = {
             "_id": job_id, "status": "queued", "total": len(items), "processed": 0, "error": None,
-            "skipped": skipped,
+            "accepted": accepted, "skipped": skipped,
             "created_at": datetime.now(timezone.utc),
-        })
+        }
+        if key:
+            doc["idempotency_key"] = key                # the field is left out without a key (partial unique index)
+        db.jobs().insert_one(doc)
+    except DuplicateKeyError:                           # the same request arrived twice at once; the other one won
+        shutil.rmtree(work_dir, ignore_errors=True)
+        again = existing_job_response(key) if key else None
+        if again is None:
+            raise
+        return again
     except BaseException:
         shutil.rmtree(work_dir, ignore_errors=True)
         raise

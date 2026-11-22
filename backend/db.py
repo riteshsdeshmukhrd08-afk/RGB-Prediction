@@ -68,6 +68,9 @@ def ensure_indexes():
     try:
         results().create_index([("job_id", ASCENDING)])
         jobs().create_index([("created_at", DESCENDING)])
+        # One job per Idempotency-Key. Partial: jobs created without a key (older ones too) are not indexed.
+        jobs().create_index([("idempotency_key", ASCENDING)], unique=True, name="idempotency_key_unique",
+                            partialFilterExpression={"idempotency_key": {"$exists": True}})
         train_jobs().create_index([("created_at", DESCENDING)])
         _indexed = True
     except Exception as e:

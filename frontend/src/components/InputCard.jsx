@@ -7,7 +7,11 @@ import { CloseIcon, UploadIcon } from "./Icons.jsx";
 
 const PREVIEW_LIMIT = 48; // thumbnails are made for the first photos only, to keep memory low
 
-export default function InputCard({ items, setItems, onRun, blockReason, sending, activity, percent, skipped, tooBig, error }) {
+const STATUS_LABEL = { queued: "Queued", resizing: "Resizing", uploading: "Uploading", processing: "Measuring", done: "Done", failed: "Failed" };
+
+export default function InputCard({ items, setItems, onRun, onClear, blockReason, phase = "idle", statuses = {}, done = 0, total = 0,
+  percent = 0, skipped, tooBig, error }) {
+  const running = phase === "running";
   const filesRef = useRef(null);
   const folderRef = useRef(null);
   const [dragging, setDragging] = useState(false);
@@ -74,13 +78,18 @@ export default function InputCard({ items, setItems, onRun, blockReason, sending
         <div className="file-area">
           <div className="row spread">
             <strong>{items.length} file(s) selected</strong>
-            <button className="link" onClick={() => setItems([])}>Clear</button>
+            <button className="link" onClick={onClear || (() => setItems([]))}>Clear</button>
           </div>
           <ul className="files">
             {items.slice(0, 200).map((it, i) => (
               <li key={i + it.path}>
                 {urls[i] ? <img src={urls[i]} alt="" /> : <span className="thumb-label">{(it.file.name.split(".").pop() || "file").slice(0, 5)}</span>}
                 <span className="name mono" title={it.path}>{it.path}</span>
+                {statuses[it.id] && (
+                  <span className={"fstatus fs-" + statuses[it.id].status} title={statuses[it.id].error || undefined}>
+                    {STATUS_LABEL[statuses[it.id].status]}
+                  </span>
+                )}
                 <span className="size mono">{formatSize(it.file.size)}</span>
                 <button className="remove" onClick={() => remove(i)} aria-label={`Remove ${it.file.name}`} title="Remove">
                   <CloseIcon />
@@ -106,16 +115,17 @@ export default function InputCard({ items, setItems, onRun, blockReason, sending
       </div>
 
       <div className="run-area">
-        {activity && (
-          <div className={"bar thin" + (percent == null ? " indeterminate" : "")} role="progressbar" aria-label={activity}
-            aria-valuenow={percent == null ? undefined : Math.round(percent)} aria-valuemin={0} aria-valuemax={100}>
-            <div style={percent == null ? undefined : { width: `${percent}%` }} />
-          </div>
-        )}
-        <button className="primary run block" onClick={onRun} disabled={!!blockReason}>
-          {sending ? "Uploading…" : "Run"}
+        <div className="progress-slot">
+          {running && (
+            <div className="bar thin" role="progressbar" aria-label="Progress" aria-valuenow={Math.round(percent)} aria-valuemin={0} aria-valuemax={100}>
+              <div style={{ width: `${percent}%` }} />
+            </div>
+          )}
+        </div>
+        <button className="primary run block" onClick={onRun} disabled={!!blockReason} aria-busy={running}>
+          {running ? `Running ${done} / ${total}` : "Run"}
         </button>
-        {blockReason && <p className="muted reason" data-testid="run-reason">{blockReason}</p>}
+        {blockReason && !running && <p className="muted reason" data-testid="run-reason">{blockReason}</p>}
       </div>
     </section>
   );

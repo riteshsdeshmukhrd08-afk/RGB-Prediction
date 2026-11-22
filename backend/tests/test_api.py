@@ -2,7 +2,9 @@ import csv
 import io
 
 import openpyxl
+import pytest
 
+import config
 import measure_service
 import storage
 from conftest import make_pdf, make_photo_png, make_small_png, upload
@@ -37,7 +39,7 @@ def test_prediction_completes_without_a_model_and_leaves_concentration_empty(cli
     png = make_photo_png()
     job_id, job = finished_job(client, upload(client, [("tube.png", png)]))
     assert job["status"] == "done" and job["total"] == 1 and job["processed"] == 1
-    assert set(job) == {"job_id", "status", "total", "processed", "error", "skipped"}
+    assert set(job) == {"job_id", "status", "total", "processed", "error", "skipped", "idempotency_key"}
 
     body = client.get(f"/api/jobs/{job_id}/results").json()
     assert set(body) == {"job_id", "status", "results"}
@@ -218,3 +220,95 @@ def test_temp_files_are_removed(client):
     before = set(glob.glob(f"{tempfile.gettempdir()}/rgbjob_*"))
     finished_job(client, upload(client, [("a.png", make_photo_png())]))
     assert set(glob.glob(f"{tempfile.gettempdir()}/rgbjob_*")) == before
+
+
+# ---- Idempotency-Key: a retried POST must not create a second job -------------------------------
+KEY = "3f2b8c1e-5a47-4d0e-9b6a-1c2d3e4f5a6b"
+
+
+def post_with_key(client, key, name="a.png"):
+    headers = {} if key is None else {"Idempotency-Key": key}
+    return client.post("/api/jobs", files=[("files", (name, make_photo_png(), "application/octet-stream"))], headers=headers)
+
+
+def test_repeated_key_returns_the_same_job_without_a_second_one(client, cloud):
+    first = post_with_key(client, KEY)
+    assert first.status_code == 202
+    again = post_with_key(client, KEY)
+    assert again.status_code == 200
+    assert again.json()["job_id"] == first.json()["job_id"]
+    assert again.json()["accepted"] == 1
+    assert len(client.get("/api/jobs").json()) == 1
+    assert len(cloud["uploads"]) == 1                    # the photo was not measured or stored again
+    assert len(client.get(f"/api/jobs/{first.json()['job_id']}/results").json()["results"]) == 1
+    assert client.get(f"/api/jobs/{first.json()['job_id']}").json()["idempotency_key"] == KEY
+
+
+def test_key_comparison_ignores_case(client):
+    a = post_with_key(client, KEY.upper())
+    b = post_with_key(client, KEY)
+    assert b.status_code == 200 and b.json()["job_id"] == a.json()["job_id"]
+
+
+def test_different_keys_make_different_jobs(client):
+    a = post_with_key(client, KEY)
+    b = post_with_key(client, "3f2b8c1e-5a47-4d0e-9b6a-1c2d3e4f5a6c")
+    assert a.json()["job_id"] != b.json()["job_id"]
+    assert len(client.get("/api/jobs").json()) == 2
+
+
+def test_missing_key_still_creates_a_job_every_time(client):
+    a, b = post_with_key(client, None), post_with_key(client, None)
+    assert a.status_code == b.status_code == 202
+    assert a.json()["job_id"] != b.json()["job_id"]
+    assert client.get(f"/api/jobs/{a.json()['job_id']}").json()["idempotency_key"] is None
+
+
+@pytest.mark.parametrize("bad", ["abc", "not-a-uuid-at-all-not-a-uuid-at-all-xx", KEY + "0", "a" * 65, "3f2b8c1e5a474d0e9b6a1c2d3e4f5a6b",
+                                 "zzzzzzzz-5a47-4d0e-9b6a-1c2d3e4f5a6b"])
+def test_invalid_key_gives_400_and_creates_nothing(client, bad):
+    res = post_with_key(client, bad)
+    assert res.status_code == 400, res.text
+    assert "Idempotency-Key" in res.json()["detail"]
+    assert client.get("/api/jobs").json() == []
+
+
+def test_concurrent_duplicate_insert_returns_the_existing_job(client, monkeypatch):
+    """Both requests passed the lookup before either inserted: the second insert hits the unique index."""
+    import main
+    first = post_with_key(client, KEY).json()["job_id"]
+    real = main.existing_job_response
+    calls = []
+
+    def blind_first_lookup(key):
+        calls.append(key)
+        return None if len(calls) == 1 else real(key)    # the "race": the first lookup finds nothing
+
+    monkeypatch.setattr(main, "existing_job_response", blind_first_lookup)
+    res = post_with_key(client, KEY)
+    assert res.status_code == 200 and res.json()["job_id"] == first
+    assert len(client.get("/api/jobs").json()) == 1
+
+
+def test_unique_partial_index_exists_and_old_jobs_without_a_key_coexist(client):
+    import db
+    client.get("/api/health")
+    info = db.jobs().index_information()
+    idx = info["idempotency_key_unique"]
+    assert idx["unique"] is True
+    assert idx["partialFilterExpression"] == {"idempotency_key": {"$exists": True}}
+    db.jobs().insert_one({"_id": "old1", "status": "done", "total": 1, "processed": 1, "skipped": []})   # no key field
+    db.jobs().insert_one({"_id": "old2", "status": "done", "total": 1, "processed": 1, "skipped": []})
+    assert client.get("/api/jobs/old1").json()["idempotency_key"] is None
+
+
+def test_cors_preflight_allows_the_idempotency_key_header(client):
+    origin = config.FRONTEND_ORIGINS[0]
+    res = client.options("/api/jobs", headers={"Origin": origin, "Access-Control-Request-Method": "POST",
+                                               "Access-Control-Request-Headers": "idempotency-key"})
+    assert res.status_code == 200
+    assert res.headers["access-control-allow-origin"] == origin
+    assert "idempotency-key" in res.headers["access-control-allow-headers"].lower()
+    blocked = client.options("/api/jobs", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST",
+                                                   "Access-Control-Request-Headers": "idempotency-key"})
+    assert "access-control-allow-origin" not in blocked.headers or blocked.status_code == 400

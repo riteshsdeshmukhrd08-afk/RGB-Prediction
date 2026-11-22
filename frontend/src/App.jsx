@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { MAX_FILE_MB, createJob, getCurrentModel, getHealth, getJob, getResults } from "./api.js";
-import { runBlockReason } from "./runState.js";
+import { initialRun, keysFor, pendingIds, progressOf, runBlockReason, runReducer } from "./runState.js";
+import { uploadFiles } from "./uploader.js";
 import { prepareImage } from "./resizeImage.js";
 import { mergeJobs } from "./mergeJobs.js";
 import { usePoll } from "./usePoll.js";
@@ -16,18 +17,20 @@ export default function App() {
   const [model, setModel] = useState(null);
 
   const [items, setItems] = useState([]);
-  const [sending, setSending] = useState(false);
+  const [run, dispatch] = useReducer(runReducer, initialRun);   // idle -> running -> done | error, plus one status per file
   const [tooBig, setTooBig] = useState([]);
   const [skipped, setSkipped] = useState([]);
-  const [error, setError] = useState(null);
-  const [uploadError, setUploadError] = useState(null);
-  const [jobIds, setJobIds] = useState([]);       // one backend job per uploaded file (requests must stay small)
-  const jobId = jobIds.length ? jobIds.join(",") : null;
+  const [error, setError] = useState(null);                     // problems of the polling (not of single files)
   const [job, setJob] = useState(null);
   const [results, setResults] = useState([]);
   const sendCtl = useRef(null);
+  const runningRef = useRef(false);                             // closes the gap between a click and the next render
   const healthCtl = useRef(null);
   const modelCtl = useRef(null);
+
+  // one backend job per uploaded file (each request must stay small)
+  const jobIds = useMemo(() => [...new Set(Object.values(run.files).map((f) => f.jobId).filter(Boolean))], [run.files]);
+  const jobId = jobIds.length ? jobIds.join(",") : null;
 
   // Is the backend (and its database) working? Checked when the page opens, and on "Check again".
   const refreshHealth = useCallback(async () => {
@@ -62,64 +65,72 @@ export default function App() {
     return () => { healthCtl.current?.abort(); modelCtl.current?.abort(); sendCtl.current?.abort(); };
   }, [refreshAll]);
 
-  // progress and rows of the running job
+  useEffect(() => { if (run.phase !== "running") runningRef.current = false; }, [run.phase]);
+
+  // progress and rows of the backend jobs
   usePoll(jobId, {
     fetcher: async (ids, signal) => {
       const parts = await Promise.all(ids.split(",").map(async (id) => {
         const [j, r] = await Promise.all([getJob(id, signal), getResults(id, signal)]);
-        return { job: j, results: r.results };
+        return { id, job: j, results: r.results };
       }));
       return mergeJobs(parts);
     },
     isDone: (d) => d.job.status === "done" || d.job.status === "failed",
-    onData: (d) => { setJob(d.job); setResults(d.results); setSkipped(d.job.skipped || []); setError(null); },
+    onData: (d) => {
+      setJob(d.job); setResults(d.results); setSkipped(d.job.skipped || []); setError(null);
+      dispatch({ type: "JOBS", jobs: d.jobs });
+    },
     onError: (e) => setError(e),
   });
 
-  async function run() {
+  function startRun() {
+    if (runningRef.current) return;                              // extra clicks while running do nothing
     const maxBytes = MAX_FILE_MB * 1024 * 1024;
     const sendable = items.filter((it) => it.file.size <= maxBytes);
     setTooBig(items.filter((it) => it.file.size > maxBytes).map((it) => it.path));
-    setError(null); setUploadError(null); setJob(null); setResults([]); setJobIds([]); setSkipped([]);
     if (!sendable.length) { setError({ message: `Every file is over ${MAX_FILE_MB} MB.` }); return; }
-    setSending(true);
-    sendCtl.current?.abort();
-    sendCtl.current = new AbortController();
-    const problems = [];
-    const skippedAll = [];
-    let accepted = 0;
-    try {
-      for (const it of sendable) {                 // one request per file, each body under 4 MB
-        let file;
-        try {
-          file = await prepareImage(it.file);
-        } catch (e) {
-          problems.push(e.message);
-          continue;
-        }
-        try {
-          const path = file === it.file ? it.path : it.path.replace(/\.[^./\\]+$/, "") + ".jpg";
-          const res = await createJob([{ file, path }], sendCtl.current.signal);
-          accepted += res.accepted;
-          skippedAll.push(...(res.skipped || []));
-          setSkipped([...skippedAll]);
-          setJob({ status: "queued", processed: 0, total: accepted });
-          setJobIds((ids) => [...ids, res.job_id]);
-        } catch (e) {
-          if (e.name === "AbortError") return;
-          problems.push(`${it.file.name}: ${e.message}`);
-        }
-      }
-      if (problems.length) setUploadError({ message: problems.join(" ") });
-    } finally {
-      setSending(false);
-    }
+    const ids = pendingIds(sendable, run.files);                 // files already sent or done are not sent again
+    if (!ids.length) return;
+    runningRef.current = true;
+    setError(null);
+    const keys = keysFor(ids, run.files);                        // a new file gets a new key, the others keep theirs
+    dispatch({ type: "START", ids, keys });
+    const ctl = new AbortController();
+    sendCtl.current = ctl;
+    uploadFiles({
+      items: sendable.filter((it) => ids.includes(it.id)).map((it) => ({ ...it, key: keys[it.id] })),
+      prepare: prepareImage,
+      send: createJob,
+      signal: ctl.signal,
+      onUpdate: (id, patch) => dispatch({ type: "FILE", id, patch }),
+    }).finally(() => { if (!ctl.signal.aborted) dispatch({ type: "UPLOADS_DONE" }); });
   }
 
-  const blockReason = runBlockReason({ fileCount: items.length, jobStatus: job?.status, sending });
-  const processing = job?.status === "queued" || job?.status === "processing";
-  const activity = sending ? "Uploading" : processing ? "Processing" : "";
-  const percent = processing && job.total ? (100 * job.processed) / job.total : null;
+  // Clear: stop every request in flight, forget every status and result
+  function clear() {
+    sendCtl.current?.abort();
+    sendCtl.current = null;
+    runningRef.current = false;
+    dispatch({ type: "RESET" });
+    setItems([]); setTooBig([]); setSkipped([]); setError(null); setJob(null); setResults([]);
+  }
+
+  const { done, total } = progressOf(items, run.files);
+  const pending = pendingIds(items, run.files).length;
+  const blockReason = runBlockReason({ fileCount: items.length, phase: run.phase, pending });
+  const percent = total ? (100 * done) / total : 0;
+  // while files are still being sent, the jobs made so far are not "the" job: keep the Results card on "processing"
+  const shownJob = job && run.phase === "running" ? { ...job, status: "processing", total, processed: done } : job;
+
+  const failedFiles = items.filter((it) => run.files[it.id]?.status === "failed");
+  const fileError = failedFiles.length
+    ? { message: `${failedFiles.length} file(s) failed: ` + failedFiles.slice(0, 3).map((it) => `${it.path}: ${run.files[it.id].error}`).join(" · ") + (failedFiles.length > 3 ? " …" : "") }
+    : null;
+
+  const names = new Map(items.map((it) => [it.id, it.path]));
+  const files = Object.entries(run.files).filter(([, f]) => f.jobId)
+    .map(([id, f]) => ({ id: f.jobId, name: names.get(Number(id)) || "(removed file)", status: f.status }));
 
   return (
     <div className="app">
@@ -127,9 +138,10 @@ export default function App() {
         <TopBar dbDown={health?.mongo === "error"} backendError={healthError} />
         <Banner health={health} healthError={healthError} onRecheck={refreshAll} />
         <main className="columns">
-        <InputCard items={items} setItems={setItems} onRun={run} blockReason={blockReason} sending={sending}
-          activity={activity} percent={percent} skipped={skipped} tooBig={tooBig} error={error || uploadError} />
-        <ResultsCard jobId={jobId} job={job} results={results} hasModel={!!model} />
+        <InputCard items={items} setItems={setItems} onRun={startRun} onClear={clear} blockReason={blockReason}
+          phase={run.phase} statuses={run.files} done={done} total={total} percent={percent}
+          skipped={skipped} tooBig={tooBig} error={error || fileError} />
+        <ResultsCard jobId={jobId} job={shownJob} results={results} hasModel={!!model} files={files} />
         </main>
       </div>
       <TrainCard onTrained={refreshModel} />
