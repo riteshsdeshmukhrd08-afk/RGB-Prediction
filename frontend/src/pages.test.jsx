@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import ResultsCard from "./components/ResultsCard.jsx";
 import TopBar from "./components/TopBar.jsx";
+import Banner from "./components/Banner.jsx";
+import App from "./App.jsx";
+import { csvFromResults } from "./csvExport.js";
 
 const job = { status: "done", processed: 2, total: 2 };
+const outside = { file_name: "c.jpg", page: null, status: "outside_range", error: "", R: 230.1, G: 165, B: 9, cod_mg_l: null, flags: "", warning: "R outside", image_url: null };
 const results = [
-  { file_name: "a.jpg", page: null, status: "ok", error: "", R: 220.02, G: 140, B: 40, predicted_concentration_ppm: 199.6, typical_error_ppm: 12.5, flags: "", warning: "", image_url: null },
-  { file_name: "b.pdf", page: 2, status: "failed", error: "no tube", R: null, G: null, B: null, predicted_concentration_ppm: null, typical_error_ppm: null, flags: "failed", warning: "", image_url: null },
+  { file_name: "a.jpg", page: null, status: "ok", error: "", R: 220.02, G: 140, B: 40, cod_mg_l: 233.25, flags: "", warning: "", image_url: null },
+  { file_name: "b.pdf", page: 2, status: "failed", error: "no tube", R: null, G: null, B: null, cod_mg_l: null, flags: "failed", warning: "", image_url: null },
 ];
 
 describe("Top bar", () => {
@@ -22,88 +26,126 @@ describe("Top bar", () => {
   });
 });
 
+describe("Banner", () => {
+  const ok = { status: "ok", mongo: "ok", cloudinary: "ok", model: "loaded" };
+  it("is not shown while the server is healthy and the COD model is loaded", () => {
+    expect(html(<Banner health={ok} healthError={null} onRecheck={() => {}} />)).toBe("");
+    expect(html(<Banner health={null} healthError={null} onRecheck={() => {}} />)).toBe("");       // still checking
+  });
+  it("tells the user clearly when the COD model is missing", () => {
+    const m = html(<Banner health={{ ...ok, model: "missing" }} healthError={null} onRecheck={() => {}} />);
+    expect(m).toContain('role="alert"');
+    expect(m).toContain("The COD model is not loaded on the server.");
+    expect(m).toContain("no COD is shown");
+    expect(m).toContain("Check again");
+  });
+  it("keeps the database and backend errors first", () => {
+    const db = html(<Banner health={{ ...ok, mongo: "error", mongo_error: "timeout", model: "missing" }} healthError={null} onRecheck={() => {}} />);
+    expect(db).toContain("Database not reachable");
+    expect(db).not.toContain("COD model");
+    const down = html(<Banner health={null} healthError={{ message: "The backend is not reachable. Is it running?" }} onRecheck={() => {}} />);
+    expect(down).toContain("The backend is not reachable");
+  });
+});
+
+describe("Train section is gone", () => {
+  it("the page has no Train section, upload or messages about training", () => {
+    const page = html(<App />);
+    for (const text of ["Train the concentration model", "Choose file", "concentration_ppm", "Upload a CSV", "Train</button>", "batch_features"])
+      expect(page).not.toContain(text);
+    expect(page).toContain("Results");                                   // the rest of the page is still there
+    expect(page).toContain("Input");
+  });
+  it("the frontend source does not call a training endpoint", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const dir = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+    const files = fs.readdirSync(dir, { recursive: true }).filter((f) => /\.(jsx?|css)$/.test(f) && !/\.test\./.test(f));
+    expect(files.length).toBeGreaterThan(5);
+    for (const f of files) expect(fs.readFileSync(path.join(dir, f), "utf8").toLowerCase(), f).not.toMatch(/api\/train|traincard|trainparts|trainstate|train-card|train-grid|startTraining|getTraining|previewTrainingFile|getCurrentModel|getCurrentReport/i);
+  });
+});
+
 describe("Results table", () => {
-  it("has the requested columns in order", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={results} hasModel />);
-    const heads = [...m.matchAll(/<th class="[^"]*">([^<]*)<\/th>/g)].map((x) => x[1]);
-    expect(heads).toEqual(["#", "File", "Page", "R", "G", "B", "Colour", "Predicted concentration (ppm)", "± error (ppm)", "Status", "Flags", "Notes", "Image"]);
+  const heads = (m) => [...m.matchAll(/<th class="[^"]*">([^<]*)<\/th>/g)].map((x) => x[1]);
+  it("has exactly the requested columns in order", () => {
+    expect(heads(html(<ResultsCard jobId="j" job={job} results={results} />))).toEqual(["File", "R", "G", "B", "COD (mg/L)", "Status"]);
   });
-  it("shows the prediction when a model is loaded", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={results} hasModel />);
-    expect(m).toMatch(/<td class="c-ppm num">199\.6<\/td><td class="c-err num">12\.5<\/td>/);
-    expect(m).not.toContain("No model loaded");
+  it("does not have the removed columns or the flagged count", () => {
+    const m = html(<ResultsCard jobId="j" job={job} results={[results[0], outside, results[1]]} />);
+    for (const gone of ["± error", "Flags", "Notes", "Predicted concentration", "flagged", "Colour", "Image", "swatch", 'class="tag"', "ppm)"]) expect(m).not.toContain(gone);
+    expect(m).not.toContain("R outside");                                   // the warning text is not shown any more
   });
-  it("shows a dash with a tooltip when there is no model", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={results} hasModel={false} />);
-    expect((m.match(/<td class="c-(?:ppm|err) num" title="No model loaded">—<\/td>/g) || []).length).toBe(4);
-    expect(m).toMatch(/>220\.02<\/td><td class="c-rgb num">140\.00<\/td><td class="c-rgb num">40\.00</);   // R, G, B are always shown
+  it("shows R, G, B and the COD in mg/L", () => {
+    const m = html(<ResultsCard jobId="j" job={job} results={results} />);
+    expect(m).toMatch(/<td class="c-rgb num">220\.02<\/td><td class="c-rgb num">140\.00<\/td><td class="c-rgb num">40\.00<\/td><td class="c-cod num">233\.3<\/td>/);
   });
-  it("shows the measured colour as a swatch, clamped to 0-255", () => {
-    const wild = [{ ...results[0], R: 300.4, G: -5, B: 40.4 }];
-    const m = html(<ResultsCard jobId="j" job={job} results={wild} hasModel />);
-    expect(m).toContain("background:rgb(255, 0, 40)");
-    expect(html(<ResultsCard jobId="j" job={job} results={[results[1]]} hasModel />)).not.toContain("swatch");   // failed row: no colour
+  it("shows the text 'outside range' instead of a number, and keeps the measured R, G, B", () => {
+    const m = html(<ResultsCard jobId="j" job={job} results={[outside]} />);
+    expect(m).toMatch(/<td class="c-cod num">outside range<\/td>/);
+    expect(m).toContain('<span class="pill warn">outside range</span>');
+    expect(m).toContain(">230.10<");
   });
-  it("shows status pills and flag tags", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], status: "low_pixels", flags: "low_pixels;clipped" }, results[1]]} hasModel />);
-    expect(m).toContain('<span class="pill warn">Low pixels</span>');
+  it("shows status OK, outside range or Failed, with dashes for a failed photo", () => {
+    const m = html(<ResultsCard jobId="j" job={job} results={[results[0], outside, results[1]]} />);
+    expect(m).toContain('<span class="pill ok">OK</span>');
+    expect(m).toContain('<span class="pill warn">outside range</span>');
     expect(m).toContain('<span class="pill bad">Failed</span>');
-    expect(m).toContain('<span class="tag">clipped</span>');
-    expect(html(<ResultsCard jobId="j" job={job} results={results} hasModel />)).toContain('<span class="pill ok">OK</span>');
+    expect(m).toMatch(/<td class="c-rgb num">–<\/td><td class="c-rgb num">–<\/td><td class="c-rgb num">–<\/td><td class="c-cod num">–<\/td>/);
   });
-  it("shows the status pill and the three figures in one summary row, with their labels apart", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={results} hasModel />);
+  it("names the page of a PDF page next to the file", () => {
+    expect(html(<ResultsCard jobId="j" job={job} results={[results[1]]} />)).toContain("b.pdf (p. 2)");
+  });
+  it("keeps 'failed' and the status in the summary row, without a flagged count", () => {
+    const m = html(<ResultsCard jobId="j" job={job} results={results} />);
     const row = m.match(/<div class="summary">.*?<\/div>/s)[0];
     expect(row).toContain('<span class="pill ok">done</span>');
     expect(row).toContain('<span class="figure"><b class="mono">2</b><span>rows</span></span>');
     expect(row).toContain('<span class="figure"><b class="mono">1</b><span>failed</span></span>');
-    expect(row).toContain('<span class="figure"><b class="mono">0</b><span>flagged</span></span>');
+    expect(row).not.toContain("flagged");
     expect(row.indexOf("pill")).toBeLessThan(row.indexOf("rows"));
-    expect(m).not.toContain('class="stats"');
+  });
+  it("uses a fixed layout with a class on every column, so it fits the panel", () => {
+    const m = html(<ResultsCard jobId="j" job={job} results={results} />);
+    const headClasses = [...m.matchAll(/<th class="([^"]+)"/g)].map((x) => x[1]);
+    expect(headClasses).toEqual(["c-file", "c-rgb num", "c-rgb num", "c-rgb num", "c-cod num", "c-status"]);
+    expect(m.match(/<tbody>.*?<\/tr>/s)[0].match(/<td class="/g)).toHaveLength(6);
   });
   it("uses the singular for exactly one row", () => {
-    const one = html(<ResultsCard jobId="j" job={job} results={[results[0]]} hasModel />);
+    const one = html(<ResultsCard jobId="j" job={job} results={[results[0]]} />);
     expect(one).toContain('<b class="mono">1</b><span>row</span>');
-    expect(one).not.toContain("<span>rows</span>");
-    expect(html(<ResultsCard jobId="j" job={job} results={[]} hasModel />)).toContain('<b class="mono">0</b><span>rows</span>');
+    expect(html(<ResultsCard jobId="j" job={job} results={[]} />)).toContain('<b class="mono">0</b><span>rows</span>');
   });
   it("colours the pill by state: done green, processing amber, failed red", () => {
-    const pill = (status) => html(<ResultsCard jobId="j" job={{ status, processed: 3, total: 15 }} results={results} hasModel />).match(/<span class="(pill [a-z]+)">([a-z]+)<\/span>/)[0];
+    const pill = (status) => html(<ResultsCard jobId="j" job={{ status, processed: 3, total: 15 }} results={results} />).match(/<span class="(pill [a-z]+)">([a-z]+)<\/span>/)[0];
     expect(pill("done")).toBe('<span class="pill ok">done</span>');
     expect(pill("processing")).toBe('<span class="pill warn">processing</span>');
     expect(pill("failed")).toBe('<span class="pill bad">failed</span>');
   });
   it("shows the progress count in the row while processing", () => {
-    const m = html(<ResultsCard jobId="j" job={{ status: "processing", processed: 3, total: 15 }} results={results} hasModel />);
-    expect(m).toContain("3/15 processed");
-    expect(html(<ResultsCard jobId="j" job={job} results={results} hasModel />)).not.toContain("processed");
+    expect(html(<ResultsCard jobId="j" job={{ status: "processing", processed: 3, total: 15 }} results={results} />)).toContain("3/15 processed");
+    expect(html(<ResultsCard jobId="j" job={job} results={results} />)).not.toContain("processed");
   });
   it("shows a centred empty state before any job", () => {
-    const m = html(<ResultsCard jobId={null} job={null} results={[]} hasModel={false} />);
+    const m = html(<ResultsCard jobId={null} job={null} results={[]} />);
     expect(m).toContain('class="empty"');
     expect(m).toContain("Results appear here after you press Run.");
   });
-  it("gives every column a class, so the styles do not depend on the column position", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={results} hasModel />);
-    const headClasses = [...m.matchAll(/<th class="([^"]+)"/g)].map((x) => x[1]);
-    expect(headClasses).toHaveLength(13);
-    expect(headClasses.filter((c) => c.includes("num"))).toHaveLength(7);            // #, Page, R, G, B, Predicted, error
-    const rowCells = m.match(/<tbody>.*?<\/tr>/s)[0].match(/<td class="/g);
-    expect(rowCells).toHaveLength(13);                                                // one cell per heading
-  });
-  it("shows the Image link as 'Open' on one line", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], image_url: "https://x.example/a.jpg" }]} hasModel />);
-    expect(m).toContain('<a href="https://x.example/a.jpg" target="_blank" rel="noreferrer">Open</a>');
-  });
   it("puts the download buttons after the table, at the bottom of the panel", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={results} hasModel />);
+    const m = html(<ResultsCard jobId="j" job={job} results={results} />);
     expect(m.indexOf("</table>")).toBeLessThan(m.indexOf('class="downloads"'));
-    expect(html(<ResultsCard jobId="j" job={{ status: "processing", processed: 1, total: 2 }} results={results} hasModel />)).not.toContain("Download CSV");
+    expect(html(<ResultsCard jobId="j" job={{ status: "processing", processed: 1, total: 2 }} results={results} />)).not.toContain("Download CSV");
   });
   it("keeps the CSV and XLSX download buttons", () => {
-    const m = html(<ResultsCard jobId="job1" job={job} results={results} hasModel />);
+    const m = html(<ResultsCard jobId="job1" job={job} results={results} />);
     expect(m).toContain("Download CSV");
     expect(m).toContain("Download XLSX");
     expect(m).toContain("/api/jobs/job1/download?format=csv");
+  });
+  it("the combined CSV has a cod_mg_L column like the server export", () => {
+    const lines = csvFromResults([results[0], outside]).trim().split("\n");
+    expect(lines[0]).toBe("file_name,page,status,R,G,B,cod_mg_L,flags,warning,error,image_url");
+    expect(lines[1]).toBe("a.jpg,,ok,220.02,140,40,233.25,,,,");
+    expect(lines[2]).toBe("c.jpg,,outside_range,230.1,165,9,,,R outside,,");
   });
 });

@@ -149,8 +149,8 @@ describe("mergeJobs and the combined results", () => {
     rows[1] = { ...rows[1], file_name: "=cmd|x", warning: 'a "quoted", note' };
     const lines = csvFromResults(rows).trimEnd().split("\n");
     expect(lines).toHaveLength(25);
-    expect(lines[0]).toBe("file_name,page,status,R,G,B,predicted_concentration_ppm,typical_error_ppm,flags,warning,error,image_url");
-    expect(lines[1]).toBe("p1.jpg,,ok,201,100,50,,,,,,");
+    expect(lines[0]).toBe("file_name,page,status,R,G,B,cod_mg_L,flags,warning,error,image_url");
+    expect(lines[1]).toBe("p1.jpg,,ok,201,100,50,,,,,");
     expect(lines[2]).toContain("'=cmd|x");
     expect(lines[2]).toContain('"a ""quoted"", note"');
   });
@@ -158,7 +158,7 @@ describe("mergeJobs and the combined results", () => {
     const parts = Array.from({ length: 24 }, (_, i) => part(i + 1));
     const m = mergeJobs(parts);
     const files = m.jobs.map((j, i) => ({ id: j.id, name: `p${i + 1}.jpg`, status: "done" }));
-    const out = html(<ResultsCard jobId={files.map((f) => f.id).join(",")} job={m.job} results={m.results} hasModel={false} files={files} />);
+    const out = html(<ResultsCard jobId={files.map((f) => f.id).join(",")} job={m.job} results={m.results} files={files} />);
     expect(out.match(/Download all CSV/g)).toHaveLength(1);
     expect(out).toMatch(/<details class="per-file">/);               // closed by default: no "open" attribute
     expect(out.match(/format=csv/g)).toHaveLength(24);

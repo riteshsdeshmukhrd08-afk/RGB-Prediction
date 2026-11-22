@@ -89,12 +89,6 @@ function formWith(items) {
   return form;
 }
 
-function oneFile(file) {
-  const form = new FormData();
-  form.append("file", file, file.name);
-  return form;
-}
-
 const POLL_TIMEOUT_MS = 30_000;
 export const UPLOAD_TIMEOUT_MS = 120_000;
 
@@ -109,12 +103,3 @@ export const createJob = (items, signal, idempotencyKey) =>
 export const getJob = (id, signal) => request(`/api/jobs/${id}`, { signal, timeoutMs: POLL_TIMEOUT_MS });
 export const getResults = (id, signal) => request(`/api/jobs/${id}/results`, { signal, timeoutMs: POLL_TIMEOUT_MS });
 export const downloadUrl = (id, format) => `${BASE}/api/jobs/${id}/download?format=${format}`;
-
-// Training from a CSV or XLSX of known values
-export const previewTrainingFile = (file, signal) =>
-  request("/api/train/preview", { method: "POST", body: oneFile(file), signal });
-export const startTraining = (file, signal) =>
-  request("/api/train", { method: "POST", body: oneFile(file), signal });
-export const getTraining = (id, signal) => request(`/api/train/${id}`, { signal });
-export const getCurrentModel = (signal) => request("/api/train/current", { signal });
-export const getCurrentReport = (signal) => request("/api/train/current/report", { signal });

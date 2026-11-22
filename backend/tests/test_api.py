@@ -10,10 +10,10 @@ import storage
 from conftest import make_pdf, make_photo_png, make_small_png, upload
 from RGB_PREDICTION import measure_photo
 
-EXPORT_COLUMNS = ["file_name", "page", "status", "R", "G", "B", "predicted_concentration_ppm", "typical_error_ppm",
-                  "flags", "warning", "error", "image_url"]
-ROW_KEYS = {"file_name", "page", "status", "error", "R", "G", "B", "predicted_concentration_ppm", "typical_error_ppm",
-            "flags", "warning", "image_url"}
+EXPORT_COLUMNS = ["file_name", "page", "status", "R", "G", "B", "cod_mg_L", "flags", "warning", "error", "image_url"]
+# a photo that was measured: "ok", or "outside_range" when R, G are outside what the fixed COD model covers
+MEASURED = ("ok", "outside_range")
+ROW_KEYS = {"file_name", "page", "status", "error", "R", "G", "B", "cod_mg_l", "flags", "warning", "image_url"}
 
 
 def finished_job(client, response):
@@ -26,17 +26,15 @@ def results_of(client, job_id):
     return client.get(f"/api/jobs/{job_id}/results").json()["results"]
 
 
-# ---------------------------------------------------------------- health / no model needed
+# ---------------------------------------------------------------- health
 def test_health_reports_mongo_cloudinary_and_model(client):
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok", "mongo": "ok", "cloudinary": "ok", "model": "missing"}
+    assert r.json() == {"status": "ok", "mongo": "ok", "cloudinary": "ok", "model": "loaded"}
 
 
-def test_prediction_completes_without_a_model_and_leaves_concentration_empty(client, tmp_path):
-    import config
-    assert not config.MODEL_DIR.exists()                         # no model file anywhere
-    png = make_photo_png()
+def test_prediction_completes_and_a_point_outside_the_model_range_has_no_cod(client, tmp_path):
+    png = make_photo_png()                               # orange tube: G is about 140, below the model's 146-175
     job_id, job = finished_job(client, upload(client, [("tube.png", png)]))
     assert job["status"] == "done" and job["total"] == 1 and job["processed"] == 1
     assert set(job) == {"job_id", "status", "total", "processed", "error", "skipped", "idempotency_key"}
@@ -44,8 +42,9 @@ def test_prediction_completes_without_a_model_and_leaves_concentration_empty(cli
     body = client.get(f"/api/jobs/{job_id}/results").json()
     assert set(body) == {"job_id", "status", "results"}
     row = body["results"][0]
-    assert set(row) == ROW_KEYS and row["status"] == "ok" and row["page"] is None and row["error"] == ""
-    assert row["predicted_concentration_ppm"] is None and row["typical_error_ppm"] is None   # no model: empty
+    assert set(row) == ROW_KEYS and row["page"] is None and row["error"] == ""
+    assert row["status"] == "outside_range" and row["cod_mg_l"] is None        # no number outside the model's range
+    assert "calibration range" in row["warning"]
 
     # the same file measured straight with the script: R, G, B are its trimmed means, rounded to 2 decimals
     path = tmp_path / "direct.png"
@@ -53,6 +52,21 @@ def test_prediction_completes_without_a_model_and_leaves_concentration_empty(cli
     m, _ = measure_photo(path)
     assert (row["R"], row["G"], row["B"]) == (round(m["trim_R"], 2), round(m["trim_G"], 2), round(m["trim_B"], 2))
     assert row["image_url"].startswith("https://res.example.com/rgb-measure/" + job_id)
+
+
+def test_in_range_photo_gets_a_cod_in_mg_per_l(client, monkeypatch):
+    real = measure_service.measure_photo
+
+    def in_range(path):
+        m, arr = real(path)
+        m["trim_R"], m["trim_G"] = 185.853, 163.778      # the measured values of a 449 ppm sample photo
+        return m, arr
+
+    monkeypatch.setattr(measure_service, "measure_photo", in_range)
+    job_id, job = finished_job(client, upload(client, [("tube.png", make_photo_png())]))
+    row = results_of(client, job_id)[0]
+    assert row["status"] == "ok" and isinstance(row["cod_mg_l"], float) and 100 <= row["cod_mg_l"] <= 1250
+    assert (row["R"], row["G"]) == (185.85, 163.78)
 
 
 def test_low_pixels_row_has_a_warning(client, monkeypatch):
@@ -66,7 +80,7 @@ def test_low_pixels_row_has_a_warning(client, monkeypatch):
     monkeypatch.setattr(measure_service, "measure_photo", few_pixels)
     job_id, job = finished_job(client, upload(client, [("tube.png", make_photo_png())]))
     row = results_of(client, job_id)[0]
-    assert job["status"] == "done" and row["status"] == "low_pixels"
+    assert job["status"] == "done" and row["status"] in ("ok", "outside_range")
     assert "low_pixels" in row["flags"] and "120 valid liquid pixels" in row["warning"]
 
 
@@ -80,7 +94,7 @@ def test_one_bad_photo_does_not_stop_the_job(client):
     rows = {r["file_name"]: r for r in results_of(client, job_id)}
     assert rows["bad.png"]["status"] == "failed" and rows["bad.png"]["error"] and rows["bad.png"]["flags"] == "failed"
     assert rows["bad.png"]["R"] is None
-    assert rows["good.png"]["status"] == "ok"
+    assert rows["good.png"]["status"] in MEASURED
 
 
 def test_all_photos_failing_makes_the_job_failed(client):
@@ -111,7 +125,7 @@ def test_multipage_pdf_gives_one_row_per_page(client, tmp_path):
     rows = results_of(client, job_id)
     assert [x["page"] for x in rows] == [1, 2, 3]
     assert {x["file_name"] for x in rows} == {"scan.pdf"}
-    assert all(x["status"] == "ok" for x in rows)
+    assert all(x["status"] in MEASURED for x in rows)
 
 
 def test_folder_upload_with_thumbs_db(client):
@@ -162,7 +176,7 @@ def test_cloudinary_failure_keeps_job_going(client, monkeypatch):
     job_id, job = finished_job(client, upload(client, [("tube.png", make_photo_png())]))
     assert job["status"] == "done"
     row = results_of(client, job_id)[0]
-    assert row["status"] == "ok" and row["image_url"] is None
+    assert row["status"] in MEASURED and row["image_url"] is None
     assert "image not stored: quota exceeded" in row["warning"]
 
 
@@ -172,7 +186,7 @@ def test_cloudinary_not_configured_skips_uploads(client, monkeypatch, cloud):
     assert client.get("/api/health").json()["cloudinary"] == "not_configured"
     job_id, job = finished_job(client, upload(client, [("tube.png", make_photo_png())]))
     row = results_of(client, job_id)[0]
-    assert job["status"] == "done" and row["image_url"] is None and row["warning"] == ""
+    assert job["status"] == "done" and row["image_url"] is None and "image not stored" not in row["warning"]
     assert cloud["uploads"] == []
 
 
