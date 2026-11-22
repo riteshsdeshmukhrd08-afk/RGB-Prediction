@@ -13,7 +13,7 @@ export default function TopBar({ dbDown, backendError }) {
     <header className="topbar">
       <div className="brand">
         <h1>RGB measurement</h1>
-        <p className="subtitle">Colour readings of liquid in vial photos, with an optional concentration estimate</p>
+        <p className="subtitle">Colour readings of liquid in vial photos, with the predicted COD</p>
       </div>
       <div className="chips">
         {backendError && <Chip tone="bad">{backendError.message}</Chip>}

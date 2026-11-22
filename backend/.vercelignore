@@ -1,0 +1,3 @@
+# Not needed by the deployed API function (tests and local helper scripts).
+tests/
+scripts/

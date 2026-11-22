@@ -8,13 +8,12 @@ import pandas as pd
 
 from RGB_PREDICTION import safe_text, write_table
 
-COLUMNS = ["file_name", "page", "status", "R", "G", "B", "predicted_concentration_ppm", "typical_error_ppm",
-           "flags", "warning", "error", "image_url"]
+COLUMNS = ["file_name", "page", "status", "R", "G", "B", "cod_mg_L", "flags", "warning", "error", "image_url"]
 
 
 def build_export(results, fmt, out_dir):
     """Write the results into out_dir and return the Path of the file ("csv" or "xlsx")."""
-    df = pd.DataFrame({c: [r.get(c) for r in results] for c in COLUMNS}, columns=COLUMNS)
+    df = pd.DataFrame({c: [r.get("cod_mg_l" if c == "cod_mg_L" else c) for r in results] for c in COLUMNS}, columns=COLUMNS)
     df["page"] = pd.array(df["page"], dtype="Int64")          # whole numbers, blank for images
 
     # Stop spreadsheet formula injection. Done here for EVERY text cell, because pandas string

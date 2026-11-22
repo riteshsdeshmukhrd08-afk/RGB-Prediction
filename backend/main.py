@@ -32,12 +32,11 @@ from starlette.background import BackgroundTask
 import config
 import db
 import exports
-import concentration
+import cod_model
 import imaging
 import measure_service
 import pdf_utils
 import storage
-import training
 from RGB_PREDICTION import qc_flags
 
 logging.basicConfig(level=logging.INFO)
@@ -56,12 +55,7 @@ async def lifespan(app):
     db.init()
     db.ensure_indexes()
     storage.setup()
-    concentration.load_model()      # the concentration model is read here (it is optional)
-    if db.is_configured():
-        try:
-            training.fail_stale_jobs()
-        except Exception as e:
-            log.warning("Could not check old training jobs: %s", type(e).__name__)
+    cod_model.load()                # the fixed COD model is read once, here, never per request
     yield
     db.close()
 
@@ -220,7 +214,7 @@ def get_job_or_404(job_id):
 # ---------------------------------------------------------------------------
 # Background job
 # ---------------------------------------------------------------------------
-def process_item(job_id, item, work_dir, model):
+def process_item(job_id, item, work_dir):
     """Handle ONE photo / PDF page: (render) -> upload -> measure -> save. Returns what the job needs, or None."""
     if db.jobs().count_documents({"_id": job_id}, limit=1) == 0:
         return None                                # the job was deleted meanwhile
@@ -235,7 +229,7 @@ def process_item(job_id, item, work_dir, model):
                 url = storage.upload_file(image_path, job_id)
             except Exception as e:                 # a failed upload never stops the job
                 warnings.append(f"image not stored: {str(e)[:200]}")
-        row, qc = measure_service.analyze_image(image_path, model)
+        row, qc = measure_service.analyze_image(image_path)
     except Exception as e:
         row, qc = measure_service.empty_row(), None
         row["error"] = f"{type(e).__name__}: {e}"
@@ -253,15 +247,13 @@ def process_item(job_id, item, work_dir, model):
     return {"id": inserted, "seq": item["seq"], "status": row["status"], "error": row["error"], "qc": qc}
 
 
-def process_job(job_id, items, work_dir, model):
-    """Runs in the background. WORKERS photos at a time (threads, never a process pool).
-    `model` is the concentration model the job started with (or None); a training that finishes
-    meanwhile does not change it."""
+def process_job(job_id, items, work_dir):
+    """Runs in the background. WORKERS photos at a time (threads, never a process pool)."""
     try:
         db.jobs().update_one({"_id": job_id}, {"$set": {"status": "processing"}})
         done = []
         with ThreadPoolExecutor(max_workers=config.WORKERS) as pool:
-            futures = [pool.submit(process_item, job_id, it, work_dir, model) for it in items]
+            futures = [pool.submit(process_item, job_id, it, work_dir) for it in items]
             for fut in as_completed(futures):
                 try:
                     res = fut.result()
@@ -304,7 +296,7 @@ def health():
     else:
         ok, reason = db.ping()
     out = {"status": "ok", "mongo": "ok" if ok else "error", "cloudinary": storage.check(),
-           "model": "loaded" if concentration.is_ready() else "missing"}
+           "model": "loaded" if cod_model.is_ready() else "missing"}
     if not ok:
         out["mongo_error"] = reason
     return out
@@ -319,7 +311,6 @@ def create_job(background_tasks: BackgroundTasks, files: list[UploadFile] = File
         again = existing_job_response(key)
         if again is not None:
             return again
-    model, _ = concentration.current()                  # no model is fine: R, G, B are always returned
     if len(files) > config.MAX_FILES:
         raise HTTPException(400, f"Too many files: {len(files)} (limit is {config.MAX_FILES}).")
 
@@ -346,7 +337,7 @@ def create_job(background_tasks: BackgroundTasks, files: list[UploadFile] = File
     except BaseException:
         shutil.rmtree(work_dir, ignore_errors=True)
         raise
-    background_tasks.add_task(process_job, job_id, items, work_dir, model)
+    background_tasks.add_task(process_job, job_id, items, work_dir)
     return {"job_id": job_id, "status": "queued", "accepted": accepted, "skipped": skipped}
 
 
@@ -408,90 +399,3 @@ def formats():
     exts = imaging.supported_extensions()
     return {"extensions": exts + [".pdf"], "pdf": True,
             "heif": ".heic" in exts, "avif": ".avif" in exts}
-
-
-# ---------------------------------------------------------------------------
-# Training: fit the concentration model from a CSV or XLSX of known values
-# ---------------------------------------------------------------------------
-NO_MODEL = "No model: train one from a CSV or XLSX file."
-
-
-def read_table_upload(upload):
-    """Read the single uploaded table (size limit checked) and return (DataFrame, file name). 413 / 422 on problems."""
-    max_bytes = config.MAX_FILE_MB * 1024 * 1024
-    data = upload.file.read(max_bytes + 1)
-    if len(data) > max_bytes:
-        raise HTTPException(413, f"The file is larger than {config.MAX_FILE_MB} MB.")
-    name = sanitize_filename(upload.filename)
-    try:
-        return concentration.read_table(data, name), name
-    except ValueError as e:
-        raise HTTPException(422, str(e))
-
-
-def train_job_json(job):
-    return {"job_id": job["_id"], "status": job["status"], "progress": job.get("progress", ""),
-            "warnings": job.get("warnings", []), "error": job.get("error")}
-
-
-def get_train_job_or_404(job_id):
-    require_db()
-    job = db.train_jobs().find_one({"_id": job_id})
-    if job is None:
-        raise HTTPException(404, "Training job not found.")
-    return job
-
-
-@app.post("/api/train/preview")
-def preview_training_file(file: UploadFile = File(...)):
-    """Checks a training file without training: first rows, detected concentrations, errors and warnings."""
-    df, _ = read_table_upload(file)
-    summary, _ = concentration.inspect_table(df)
-    return summary
-
-
-@app.post("/api/train", status_code=202)
-def start_training(file: UploadFile = File(...)):
-    require_db()
-    df, name = read_table_upload(file)
-    summary, valid = concentration.inspect_table(df)
-    if valid is None:
-        raise HTTPException(422, " ".join(summary["errors"]))
-    if not training.lock.acquire(blocking=False):
-        raise HTTPException(409, "A training is already running. Wait for it to finish.")
-    job_id = uuid.uuid4().hex
-    try:
-        db.train_jobs().insert_one({
-            "_id": job_id, "status": "queued", "progress": "Queued", "warnings": summary["warnings"],
-            "error": None, "created_at": datetime.now(timezone.utc),
-        })
-        training.start(job_id, valid, name)               # the thread releases the lock when it ends
-    except BaseException:
-        training.lock.release()
-        raise
-    return {"job_id": job_id, "status": "queued"}
-
-
-@app.get("/api/train/current")
-def current_model():
-    """Details of the loaded model; 404 if there is none."""
-    model, version = concentration.current()
-    if model is None:
-        raise HTTPException(404, NO_MODEL)
-    keys = ("features", "intercept", "coefficients", "typical_error_ppm", "validated", "validation", "n_rows",
-            "n_concentrations", "training_range", "source_file", "trained_at")
-    return {"model_version": version, **{k: model.get(k) for k in keys}}
-
-
-@app.get("/api/train/current/report")
-def current_model_report():
-    """The full report of the loaded model, including the table of validation errors."""
-    model, version = concentration.current()
-    if model is None:
-        raise HTTPException(404, NO_MODEL)
-    return {"model_version": version, **model}
-
-
-@app.get("/api/train/{job_id}")
-def get_training(job_id: str):
-    return train_job_json(get_train_job_or_404(job_id))

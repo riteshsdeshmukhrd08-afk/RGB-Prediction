@@ -27,7 +27,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
 
 .app { width: 100%; max-width: 1920px; margin: 0 auto; padding: 0 24px 40px; }
 
-/* ===== Page: top bar + the two panels fill the screen, the Train panel follows below ===== */
+/* ===== Page: top bar + the two panels fill the screen ===== */
 .stage { display: flex; flex-direction: column; height: 100vh; min-height: 680px; box-sizing: border-box; }
 .topbar { flex: none; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; justify-content: space-between; padding: 24px 0 16px; }
 .brand h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
@@ -82,7 +82,7 @@ a { color: var(--accent); transition: color var(--t); }
 a:hover { color: #5eead4; }
 a.button { color: var(--text); }
 
-/* ===== Drop zones (Input and Train) ===== */
+/* ===== Drop zone ===== */
 .drop { border: 1.5px dashed #34404e; border-radius: var(--radius); padding: 24px; text-align: center; background: rgba(255, 255, 255, .015);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; transition: border-color var(--t), background var(--t); }
 .drop p { margin: 0; color: var(--muted); }
@@ -139,7 +139,6 @@ a.button { color: var(--text); }
 .pill.ok { color: var(--ok); background: rgba(74, 222, 128, .12); border-color: rgba(74, 222, 128, .3); }
 .pill.warn { color: var(--warn); background: rgba(245, 185, 66, .12); border-color: rgba(245, 185, 66, .3); }
 .pill.bad { color: var(--bad); background: rgba(248, 113, 113, .12); border-color: rgba(248, 113, 113, .3); }
-.tag { display: inline-block; margin: 0 4px 4px 0; padding: 0 8px; border-radius: 6px; background: rgba(139, 152, 168, .16); color: #c3cdd8; font: 12px/20px var(--mono); }
 .badge { display: inline-block; font: 11px/16px var(--mono); padding: 0 6px; border: 1px solid currentColor; border-radius: 4px; opacity: .85; vertical-align: middle; }
 .job-id { font-size: 12px; }
 
@@ -184,67 +183,26 @@ tr.row-failed td { color: #f0a3a3; }
 table.small { width: auto; min-width: 280px; margin: 0 0 8px; border: 1px solid var(--border); border-radius: 8px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
 table.small td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 tr.chosen td { color: var(--accent); font-weight: 600; background: rgba(45, 212, 191, .08); }
-.swatch { display: inline-block; width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .22); vertical-align: middle; }
 
-/* The results table: automatic layout, so a column is never narrower than its content. Every column has a
-   minimum width and keeps its text on one line (Notes and Flags wrap between words / tags only). The styles use
-   the column classes set in ResultsCard, not the column's position. */
-/* min-width = the sum of the column minimums below, so the table scrolls instead of squeezing a column */
-.results-table { width: 100%; min-width: 1644px; border-collapse: separate; border-spacing: 0; }
-.results-table th, .results-table td { padding: 12px 14px; vertical-align: middle; white-space: nowrap; }
+/* The results table has six columns and always fits its panel: fixed layout, percentage widths, no sideways scroll.
+   The file name takes what is left and is cut with "..." (its full name is in the tooltip). */
+.results-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.results-table th, .results-table td { padding: 12px 12px; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .results-table th { background: var(--panel-2); color: var(--head-text); }
 .results-table tbody tr:last-child td { border-bottom: 0; }
 .results-table .num { text-align: right; }
 .results-table td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.c-index { width: 1%; min-width: 48px; }
-.c-file { min-width: 220px; }
-.c-file .ellipsis { display: block; max-width: 320px; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
-.c-page { width: 1%; min-width: 64px; }
-.c-rgb { width: 1%; min-width: 88px; }
-.c-colour { width: 1%; min-width: 80px; }
-.c-ppm { width: 1%; min-width: 248px; }
-.c-err { width: 1%; min-width: 140px; }
-.c-status { width: 1%; min-width: 120px; }
-.results-table td.c-flags { width: 1%; min-width: 160px; white-space: normal; }
-.results-table td.c-notes { min-width: 220px; white-space: normal; overflow-wrap: break-word; color: var(--muted); font-size: 13px; }
-.results-table th.c-notes { min-width: 220px; }
-.results-table th.c-flags { min-width: 160px; }
-.c-image { width: 1%; min-width: 80px; }
-.c-image a { white-space: nowrap; }
-
-/* ===== Train panel ===== */
-.train-card { width: 100%; min-height: 260px; display: flex; flex-direction: column; }
-.train-card .messages p { margin: 4px 0; font-size: 14px; }
-.passed { color: var(--ok); display: flex; align-items: center; gap: 8px; }
-.steps { display: flex; flex-wrap: wrap; gap: 8px 24px; list-style: none; margin: 0 0 24px; padding: 0; }
-.step { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
-.step .num { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--border); font-size: 12px; font-weight: 600; transition: all var(--t); }
-.step.active { color: var(--text); }
-.step.active .num { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 3px rgba(45, 212, 191, .18); }
-.step.done { color: var(--text); }
-.step.done .num { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.step:not(:last-child)::after { content: ""; width: 32px; height: 1px; background: var(--border); margin-left: 16px; }
-.train-grid { display: flex; gap: 24px; align-items: stretch; flex: 1; min-height: 0; }
-.train-left { flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; }
-.train-left > .muted { margin-top: 0; }
-.train-right { flex: 1.5 1 480px; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
-.train-right .preview h3:first-child, .train-right .report > h3:first-child { margin-top: 0; }
-.report .stats { margin-bottom: 0; }
-@media (max-width: 1099px) { .train-grid { flex-direction: column; align-items: stretch; } .train-right { max-height: none; } }
-@media (max-width: 699px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.c-file { width: auto; }
+.c-file .ellipsis { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.c-rgb { width: 11%; }
+.c-cod { width: 20%; }
+.c-status { width: 16%; }
+@media (max-width: 600px) { .results-table th, .results-table td { padding: 10px 6px; } .c-rgb { width: 12%; } .c-cod { width: 24%; } .c-status { width: 22%; } }
 
 /* ===== Modal ===== */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(5, 8, 12, .72); display: grid; place-items: center; z-index: 10; }
 .modal { background: var(--panel); border: 1px solid var(--border); padding: 16px; border-radius: var(--radius); max-width: min(92vw, 640px); }
 .modal video { width: 100%; border-radius: 8px; background: #000; }
-
-/* ===== Train card: the chosen file ===== */
-.file-chip { display: flex; align-items: center; gap: 12px; max-width: 100%; padding: 8px 8px 8px 16px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
-.file-chip .file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
-.file-chip .muted { flex: none; font-size: 12px; }
-.remove.always { opacity: 1; }
-.help { margin: 8px 0 0; font-size: 13px; }
-.mappings { margin: 0 0 8px; padding-left: 20px; color: var(--muted); font-size: 12px; }
 
 /* ===== Smaller screens: stacked panels, the table still scrolls inside its own area ===== */
 @media (max-width: 960px) {

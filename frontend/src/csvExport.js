@@ -1,7 +1,6 @@
 // Builds the combined CSV in the browser from the merged results. Same columns, order and
 // formula-injection protection as backend/exports.py, so it matches a server download.
-export const CSV_COLUMNS = ["file_name", "page", "status", "R", "G", "B", "predicted_concentration_ppm",
-  "typical_error_ppm", "flags", "warning", "error", "image_url"];
+export const CSV_COLUMNS = ["file_name", "page", "status", "R", "G", "B", "cod_mg_L", "flags", "warning", "error", "image_url"];
 
 const DANGEROUS_START = ["=", "+", "-", "@", "\t", "\r"];
 
@@ -14,7 +13,7 @@ function cell(value) {
 
 export function csvFromResults(results) {
   const lines = [CSV_COLUMNS.join(",")];
-  for (const r of results) lines.push(CSV_COLUMNS.map((c) => cell(r[c])).join(","));
+  for (const r of results) lines.push(CSV_COLUMNS.map((c) => cell(c === "cod_mg_L" ? r.cod_mg_l : r[c])).join(","));
   return lines.join("\n") + "\n";
 }
 

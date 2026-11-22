@@ -41,5 +41,5 @@ MAX_FILES = _int_env("MAX_FILES", 200)
 WORKERS = _int_env("WORKERS", 2)                  # photos measured at the same time
 MAX_PDF_PAGES = _int_env("MAX_PDF_PAGES", 50)
 
-# Folder that holds concentration_model.json (a relative path is relative to the backend folder)
-MODEL_DIR = (BASE_DIR / os.getenv("MODEL_DIR", "model")).resolve()
+# The one fixed COD model. It is a joblib file, which runs code when loaded, so only this exact path is ever loaded.
+COD_MODEL_PATH = BASE_DIR / "models" / "cod_ann_model_bundle.joblib"
