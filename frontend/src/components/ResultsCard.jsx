@@ -45,7 +45,7 @@ export default function ResultsCard({ jobId, job, results, hasModel }) {
       <div className="panel-head">
         <div className="title-group">
           <h2>Results</h2>
-          {jobId && <span className="muted mono job-id" title={jobId}>job {jobId.slice(0, 8)}</span>}
+          {jobId && <span className="muted mono job-id" title={jobId}>job {jobId.slice(0, 8)}{jobId.includes(",") ? ` +${jobId.split(",").length - 1}` : ""}</span>}
         </div>
       </div>
 
@@ -87,8 +87,13 @@ export default function ResultsCard({ jobId, job, results, hasModel }) {
 
       {finished && results.length > 0 && (
         <div className="downloads">
-          <a className="button" href={downloadUrl(jobId, "csv")}><DownloadIcon width={16} height={16} /> Download CSV</a>
-          <a className="button" href={downloadUrl(jobId, "xlsx")}><DownloadIcon width={16} height={16} /> Download XLSX</a>
+          {jobId.split(",").map((id, n, all) => {
+            const part = all.length > 1 ? ` (file ${n + 1})` : "";   // one backend job per uploaded file
+            return [
+              <a className="button" key={id + "c"} href={downloadUrl(id, "csv")}><DownloadIcon width={16} height={16} /> Download CSV{part}</a>,
+              <a className="button" key={id + "x"} href={downloadUrl(id, "xlsx")}><DownloadIcon width={16} height={16} /> Download XLSX{part}</a>,
+            ];
+          })}
         </div>
       )}
     </section>
