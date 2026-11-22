@@ -1,7 +1,15 @@
 // Shrinks big photos in the browser before upload (Vercel rejects request bodies over ~4.5 MB).
 //
-// The backend shrinks every photo to 1200 px (MAX_SIDE) before measuring, so a 1600 px upload is
-// measured the same way; it only has to be small enough to travel. Rules:
+// KNOWN LIMITATION: resizing in the browser does NOT always give the same measurement as the original file.
+// The backend shrinks every photo to 1200 px (MAX_SIDE) before measuring, and training data was measured on
+// the original files, but Chrome's canvas resampling differs slightly from the backend's (about 0.7 of a level
+// darker, in every channel) and the liquid-region (ROI) detection is sensitive to that. In a test of 9 real
+// photos, 6 stayed within about 1 level, but:
+//   * IMG_2506 and IMG_2507 find a DIFFERENT REGION once resized: the original gives a large region
+//     (B about 205), the resized photo a tube-like region (B about 7).
+//   * IMG_3463 also changes (R 185.9 -> 192.3, G 163.8 -> 168.2, B 16.4 -> 6.9; ROI 119x100 -> 82x175).
+// Which of the two is "right" is not decided. Photos that need no resizing are sent unchanged and are not
+// affected. See README.md ("Uploads and the browser resize"). Rules:
 //   * longest side <= MAX_UPLOAD_SIDE and file <= MAX_BODY_BYTES: the original file is sent unchanged
 //   * otherwise draw on a canvas (longest side -> 1600 px), export JPEG 0.92, lower quality in steps
 //   * EXIF orientation is applied by the decoder ("from-image"); the JPEG has no EXIF, so no double rotation
