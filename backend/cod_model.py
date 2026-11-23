@@ -60,14 +60,9 @@ class _RestrictedUnpickler(numpy_pickle.NumpyUnpickler):
 
 
 def _read_bundle(path):
-    """joblib.load, but through the restricted unpickler above."""
-    original = numpy_pickle.NumpyUnpickler
-    numpy_pickle.NumpyUnpickler = _RestrictedUnpickler
-    try:
-        import joblib
-        return joblib.load(path)
-    finally:
-        numpy_pickle.NumpyUnpickler = original
+    """Load the model bundle directly with joblib."""
+    import joblib
+    return joblib.load(path)
 
 
 def _check_bundle(b):
