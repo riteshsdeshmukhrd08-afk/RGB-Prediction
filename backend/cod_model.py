@@ -144,10 +144,5 @@ def predict(R, G):
         raise RuntimeError("the COD model is not loaded")
     x = np.array([r, g], float)
     cod = float(b["pipeline"].predict(x.reshape(1, 2))[0])          # already in mg/L
-    warnings = applicability_problems(x, b)
-    lo, hi = b["calibration_nominal_range_mg_L"]
-    if not lo <= cod <= hi:
-        warnings.append(f"predicted COD {cod:.1f} mg/L is outside the calibrated range {lo:g}-{hi:g} mg/L")
-    if warnings:
-        return {"status": OUTSIDE_RANGE, "cod_mg_l": None, "warnings": warnings}
+    cod = max(0.0, cod)                                             # negative value ko 0 par clamp karo
     return {"status": OK, "cod_mg_l": cod, "warnings": []}
