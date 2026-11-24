@@ -5,7 +5,7 @@ import TopBar from "./components/TopBar.jsx";
 import Banner from "./components/Banner.jsx";
 import ModelCards from "./components/ModelCards.jsx";
 import { CompareResult, COMPARE_NOTE } from "./components/CompareCard.jsx";
-import { modelLabel } from "./modelInfo.js";
+import { MODEL_DISPLAY_NAME, modelLabel } from "./modelInfo.js";
 import { csvFromResults } from "./csvExport.js";
 
 const job = { status: "done", processed: 2, total: 2 };
@@ -31,13 +31,16 @@ describe("Banner", () => {
 });
 
 describe("Top bar", () => {
-  it("shows the active ANN model with its expected error", () => {
+  it("shows the model name from one constant, with no error value", () => {
     const m = html(<TopBar dbDown={false} backendError={null} model={ANN} />);
     expect(m).toContain("RGB measurement");
-    expect(m).toContain("Model: ANN v1.1 · ±33.9 mg/L");
+    expect(m).toContain("Model: RGB prediction model");
+    expect(MODEL_DISPLAY_NAME).toBe("RGB prediction model");
+    expect(m).not.toMatch(/±|33\.9|mg\/L/);
+    expect(modelLabel(ANN)).toBe(`Model: ${MODEL_DISPLAY_NAME}`);
   });
   it("shows the linear model's details, or that it is not trained yet", () => {
-    expect(html(<TopBar dbDown={false} backendError={null} model={LINEAR} />)).toContain("Model: linear (R, G) · ±12.5 mg/L");
+    expect(html(<TopBar dbDown={false} backendError={null} model={LINEAR} />)).toContain("Model: linear (R, G)");
     expect(html(<TopBar dbDown={false} backendError={null} model={UNTRAINED} />)).toContain("Model: linear · not trained yet");
     expect(modelLabel(null)).toBe("");
   });
@@ -136,24 +139,32 @@ describe("Results table", () => {
     expect(withImage).toContain('<td class="c-image"><a href="https://x.example/a.jpg" target="_blank" rel="noreferrer">Open</a></td>');
     expect(html(<ResultsCard jobId="j" job={job} results={[results[0]]} />)).toContain('<td class="c-image">—</td>');
   });
-  it("shows the status and the ± error in the concentration tooltip", () => {
+  it("shows the status in the concentration tooltip, without the expected error", () => {
     const review = { ...results[0], predicted_concentration_mg_L: 387.6, expected_error_mg_L: 33.93783767886789, model_status: "REVIEW" };
-    expect(rowTooltip(review).split(String.fromCharCode(10))[0]).toBe("Review · ± 33.9 mg/L");
-    expect(html(<ResultsCard jobId="j" job={job} results={[review]} />)).toMatch(/<td class="c-conc num" title="Review · ± 33\.9 mg\/L[^"]*"[^>]*>387\.6<\/td>/);
-    expect(rowTooltip(results[0]).split(String.fromCharCode(10))[0]).toBe("OK · ± 12.5 mg/L");
+    expect(rowTooltip(review).split(String.fromCharCode(10))[0]).toBe("Review");
+    expect(html(<ResultsCard jobId="j" job={job} results={[review]} />)).toMatch(/<td class="c-conc num" title="Review[^"]*"[^>]*>387\.6<\/td>/);
+    expect(rowTooltip(results[0]).split(String.fromCharCode(10))[0]).toBe("OK");
   });
-  it("shows the failure reason in the tooltip of a failed row, with a dash for the error", () => {
+  it("shows the expected error of a single result nowhere on screen", () => {
+    const row = { ...results[0], predicted_concentration_mg_L: 387.6, expected_error_mg_L: 33.93783767886789, model_status: "REVIEW", warning: "w", flags: "clipped", image_url: "https://x.example/a.jpg" };
+    const screens = [html(<TopBar dbDown={false} backendError={null} model={ANN} />),
+      html(<ResultsCard jobId="j" job={job} results={[row, results[1]]} />),
+      html(<ModelCards model={ANN} onTrained={() => {}} />)];
+    for (const m of screens) expect(m).not.toMatch(/±|33\.9|33\.94|12\.5/);
+    expect(rowTooltip(row)).not.toMatch(/±|33\.9|mg\/L/);
+  });
+  it("shows the failure reason in the tooltip of a failed row", () => {
     const t = rowTooltip(results[1]);
-    expect(t.split(String.fromCharCode(10))[0]).toBe("Failed · ± —");
+    expect(t.split(String.fromCharCode(10))[0]).toBe("Failed");
     expect(t).toContain("Error: no tube");
     expect(t).toContain("The photo could not be measured, so there is no value");
   });
-  it("shows a dash for the error when none is given, and for a Not valid row", () => {
+  it("explains an empty value in the tooltip (no model, or Not valid)", () => {
     const none = { ...results[0], predicted_concentration_mg_L: null, expected_error_mg_L: null, model_status: null };
-    expect(rowTooltip(none)).toContain("OK · ± —");
+    expect(rowTooltip(none).split(String.fromCharCode(10))[0]).toBe("OK");
     expect(rowTooltip(none)).toContain("No model loaded: nothing to predict with (train the linear model first)");
     const bad = { ...results[0], predicted_concentration_mg_L: null, expected_error_mg_L: 33.94, model_status: "NOT_VALID_OUTSIDE_CALIBRATED_RANGE" };
-    expect(rowTooltip(bad).split(String.fromCharCode(10))[0]).toBe("Not valid: outside calibrated range · ± —");
+    expect(rowTooltip(bad).split(String.fromCharCode(10))[0]).toBe("Not valid: outside calibrated range");
     expect(rowTooltip(bad)).toContain("Not valid: the predicted value is outside the calibrated range, so no value is given");
   });
   it("derives the status label: OK green, Review amber, Not valid red, Failed red, Low pixels amber", () => {
@@ -166,7 +177,7 @@ describe("Results table", () => {
   it("puts the notes and flags in the tooltip, and counts flagged rows in the summary line", () => {
     const long = "Outside the calibrated region. Confirm with a standard.";
     const r = { ...results[0], model_status: "REVIEW", warning: long, flags: "clipped;high_std" };
-    expect(rowTooltip(r)).toBe(["Review · ± 12.5 mg/L", "a.jpg", "Notes: " + long, "Flags: clipped, high_std"].join(String.fromCharCode(10)));
+    expect(rowTooltip(r)).toBe(["Review", "a.jpg", "Notes: " + long, "Flags: clipped, high_std"].join(String.fromCharCode(10)));
     const m = html(<ResultsCard jobId="j" job={job} results={[r, results[1]]} />);
     expect(m).toContain('<span class="figure"><b class="mono">1</b><span>flagged</span></span>');
   });

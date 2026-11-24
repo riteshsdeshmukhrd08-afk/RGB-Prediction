@@ -27,13 +27,11 @@ function whyEmpty(r, what) {
   return "No model loaded: nothing to predict with (train the linear model first)";
 }
 
-const noError = (r) => r.expected_error_mg_L == null || r.model_status === NOT_VALID;
-
-// The tooltip of the concentration: the status and the ± error ("Review · ± 33.9 mg/L"), then the file, why a value is
-// empty, the failure reason, the notes and the flags.
+// The tooltip of the concentration: the status ("Review"), then the file, why a value is empty, the failure reason,
+// the notes and the flags. The expected error is not shown on screen.
 export function rowTooltip(r) {
   const [, label] = statusPill(r);
-  const lines = [`${label} · ± ${noError(r) ? "—" : num(r.expected_error_mg_L) + " mg/L"}`];
+  const lines = [label];
   lines.push(r.file_name + (r.page ? ` (page ${r.page})` : ""));
   if (r.predicted_concentration_mg_L == null) lines.push(whyEmpty(r, "value"));
   if (r.error) lines.push("Error: " + r.error);
