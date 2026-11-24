@@ -1,3 +1,5 @@
+import { modelLabel } from "../modelInfo.js";
+
 function Chip({ tone, children }) {
   return (
     <span className={"chip " + tone}>
@@ -7,15 +9,17 @@ function Chip({ tone, children }) {
   );
 }
 
-// The header shows the title and, only when something is wrong with the backend or database, a red chip.
-export default function TopBar({ dbDown, backendError }) {
+// The header shows the title, the active model ("Model: ANN v2 clean · ±17.8 mg/L") and, when something is wrong
+// with the backend or database, a red chip.
+export default function TopBar({ dbDown, backendError, model }) {
   return (
     <header className="topbar">
       <div className="brand">
         <h1>RGB measurement</h1>
-        <p className="subtitle">Colour readings of liquid in vial photos, with an optional concentration estimate</p>
+        <p className="subtitle">Colour readings of liquid in vial photos, with the predicted concentration</p>
       </div>
       <div className="chips">
+        {model && <Chip tone="model">{modelLabel(model)}</Chip>}
         {backendError && <Chip tone="bad">{backendError.message}</Chip>}
         {dbDown && <Chip tone="bad">Database not reachable</Chip>}
       </div>

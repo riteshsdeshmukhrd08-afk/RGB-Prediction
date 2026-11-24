@@ -38,6 +38,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
 .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent); }
 .chip.bad { color: var(--text); border-color: color-mix(in srgb, var(--bad) 50%, var(--border)); }
 .chip.bad .dot { color: var(--bad); }
+.chip.model .dot { color: var(--accent); }
 .banner { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid color-mix(in srgb, var(--bad) 50%, var(--border));
   border-radius: var(--radius); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); color: var(--text); }
 .banner strong { color: var(--bad); }
@@ -190,7 +191,7 @@ tr.chosen td { color: var(--accent); font-weight: 600; background: rgba(45, 212,
    minimum width and keeps its text on one line (Notes and Flags wrap between words / tags only). The styles use
    the column classes set in ResultsCard, not the column's position. */
 /* min-width = the sum of the column minimums below, so the table scrolls instead of squeezing a column */
-.results-table { width: 100%; min-width: 1644px; border-collapse: separate; border-spacing: 0; }
+.results-table { width: 100%; min-width: 1746px; border-collapse: separate; border-spacing: 0; }
 .results-table th, .results-table td { padding: 12px 14px; vertical-align: middle; white-space: nowrap; }
 .results-table th { background: var(--panel-2); color: var(--head-text); }
 .results-table tbody tr:last-child td { border-bottom: 0; }
@@ -202,9 +203,9 @@ tr.chosen td { color: var(--accent); font-weight: 600; background: rgba(45, 212,
 .c-page { width: 1%; min-width: 64px; }
 .c-rgb { width: 1%; min-width: 88px; }
 .c-colour { width: 1%; min-width: 80px; }
-.c-ppm { width: 1%; min-width: 248px; }
+.c-conc { width: 1%; min-width: 190px; }
 .c-err { width: 1%; min-width: 140px; }
-.c-status { width: 1%; min-width: 120px; }
+.c-status { width: 1%; min-width: 280px; }
 .results-table td.c-flags { width: 1%; min-width: 160px; white-space: normal; }
 .results-table td.c-notes { min-width: 220px; white-space: normal; overflow-wrap: break-word; color: var(--muted); font-size: 13px; }
 .results-table th.c-notes { min-width: 220px; }
@@ -232,6 +233,21 @@ tr.chosen td { color: var(--accent); font-weight: 600; background: rgba(45, 212,
 .report .stats { margin-bottom: 0; }
 @media (max-width: 1099px) { .train-grid { flex-direction: column; align-items: stretch; } .train-right { max-height: none; } }
 @media (max-width: 699px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ===== Compare card and the ANN notice (they sit under the two panels, like the Train card) ===== */
+.compare-card, .ann-notice { width: 100%; }
+.compare-card { margin-top: 24px; }
+.compare-card > .muted, .compare-card > .warn { margin: 0 0 8px; }
+.compare-card .file-name { min-width: 0; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.compare-models { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 16px 0; }
+.compare-model { min-width: 0; }
+.compare-model h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--text); }
+.compare-model .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 8px; }
+.compare-table { max-height: 320px; }
+.compare-table th.num, .compare-table td.num { text-align: right; }
+.ann-notice > h2 { margin-bottom: 8px; }
+.ann-notice > .muted { margin: 0; }
+@media (max-width: 960px) { .compare-models { grid-template-columns: minmax(0, 1fr); } }
 
 /* ===== Modal ===== */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(5, 8, 12, .72); display: grid; place-items: center; z-index: 10; }

@@ -32,7 +32,9 @@ from starlette.background import BackgroundTask
 import config
 import db
 import exports
+import compare
 import concentration
+import concentration_ann
 import imaging
 import measure_service
 import pdf_utils
@@ -220,7 +222,7 @@ def get_job_or_404(job_id):
 # ---------------------------------------------------------------------------
 # Background job
 # ---------------------------------------------------------------------------
-def process_item(job_id, item, work_dir, model):
+def process_item(job_id, item, work_dir, model, model_type):
     """Handle ONE photo / PDF page: (render) -> upload -> measure -> save. Returns what the job needs, or None."""
     if db.jobs().count_documents({"_id": job_id}, limit=1) == 0:
         return None                                # the job was deleted meanwhile
@@ -235,7 +237,7 @@ def process_item(job_id, item, work_dir, model):
                 url = storage.upload_file(image_path, job_id)
             except Exception as e:                 # a failed upload never stops the job
                 warnings.append(f"image not stored: {str(e)[:200]}")
-        row, qc = measure_service.analyze_image(image_path, model)
+        row, qc = measure_service.analyze_image(image_path, model, model_type)
     except Exception as e:
         row, qc = measure_service.empty_row(), None
         row["error"] = f"{type(e).__name__}: {e}"
@@ -253,15 +255,15 @@ def process_item(job_id, item, work_dir, model):
     return {"id": inserted, "seq": item["seq"], "status": row["status"], "error": row["error"], "qc": qc}
 
 
-def process_job(job_id, items, work_dir, model):
+def process_job(job_id, items, work_dir, model, model_type):
     """Runs in the background. WORKERS photos at a time (threads, never a process pool).
-    `model` is the concentration model the job started with (or None); a training that finishes
-    meanwhile does not change it."""
+    `model` is the linear model the job started with (or None) and `model_type` is "ann" or "linear";
+    a training that finishes meanwhile does not change them."""
     try:
         db.jobs().update_one({"_id": job_id}, {"$set": {"status": "processing"}})
         done = []
         with ThreadPoolExecutor(max_workers=config.WORKERS) as pool:
-            futures = [pool.submit(process_item, job_id, it, work_dir, model) for it in items]
+            futures = [pool.submit(process_item, job_id, it, work_dir, model, model_type) for it in items]
             for fut in as_completed(futures):
                 try:
                     res = fut.result()
@@ -304,7 +306,8 @@ def health():
     else:
         ok, reason = db.ping()
     out = {"status": "ok", "mongo": "ok" if ok else "error", "cloudinary": storage.check(),
-           "model": "loaded" if concentration.is_ready() else "missing"}
+           "model_type": config.MODEL_TYPE,
+           "model": "loaded" if (config.MODEL_TYPE == "ann" or concentration.is_ready()) else "missing"}
     if not ok:
         out["mongo_error"] = reason
     return out
@@ -319,7 +322,8 @@ def create_job(background_tasks: BackgroundTasks, files: list[UploadFile] = File
         again = existing_job_response(key)
         if again is not None:
             return again
-    model, _ = concentration.current()                  # no model is fine: R, G, B are always returned
+    model, _ = concentration.current()                  # the linear model: none is fine, R, G, B are always returned
+    model_type = config.MODEL_TYPE                      # the ANN needs no model file; the job keeps this choice
     if len(files) > config.MAX_FILES:
         raise HTTPException(400, f"Too many files: {len(files)} (limit is {config.MAX_FILES}).")
 
@@ -346,7 +350,7 @@ def create_job(background_tasks: BackgroundTasks, files: list[UploadFile] = File
     except BaseException:
         shutil.rmtree(work_dir, ignore_errors=True)
         raise
-    background_tasks.add_task(process_job, job_id, items, work_dir, model)
+    background_tasks.add_task(process_job, job_id, items, work_dir, model, model_type)
     return {"job_id": job_id, "status": "queued", "accepted": accepted, "skipped": skipped}
 
 
@@ -414,6 +418,7 @@ def formats():
 # Training: fit the concentration model from a CSV or XLSX of known values
 # ---------------------------------------------------------------------------
 NO_MODEL = "No model: train one from a CSV or XLSX file."
+ANN_FIXED = "The ANN model is fixed and cannot be trained here. Set MODEL_TYPE=linear to train the linear model."
 
 
 def read_table_upload(upload):
@@ -452,6 +457,8 @@ def preview_training_file(file: UploadFile = File(...)):
 
 @app.post("/api/train", status_code=202)
 def start_training(file: UploadFile = File(...)):
+    if config.MODEL_TYPE == "ann":
+        raise HTTPException(409, ANN_FIXED)
     require_db()
     df, name = read_table_upload(file)
     summary, valid = concentration.inspect_table(df)
@@ -495,3 +502,28 @@ def current_model_report():
 @app.get("/api/train/{job_id}")
 def get_training(job_id: str):
     return train_job_json(get_train_job_or_404(job_id))
+
+
+# ---------------------------------------------------------------------------
+# Which model is active, and the comparison of the two models (neither is changed by it)
+# ---------------------------------------------------------------------------
+@app.get("/api/model")
+def model_info():
+    """The active model: model_type, model_version, features, expected_error_mg_L and trainable."""
+    if config.MODEL_TYPE == "ann":
+        return concentration_ann.info()
+    model, version = concentration.current()
+    return {"model_type": "linear", "model_version": version,
+            "features": list(model["features"]) if model else [],
+            "expected_error_mg_L": model["typical_error_ppm"] if model else None, "trainable": True,
+            "loaded": model is not None}
+
+
+@app.post("/api/compare")
+def compare_models(file: UploadFile = File(...)):
+    """Known concentrations (CSV or XLSX with concentration_ppm, R, G) against the ANN and the linear model."""
+    df, _ = read_table_upload(file)
+    result, errors = compare.compare_table(df)
+    if errors:
+        raise HTTPException(422, " ".join(errors))
+    return result

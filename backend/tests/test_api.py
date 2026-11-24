@@ -10,10 +10,10 @@ import storage
 from conftest import make_pdf, make_photo_png, make_small_png, upload
 from RGB_PREDICTION import measure_photo
 
-EXPORT_COLUMNS = ["file_name", "page", "status", "R", "G", "B", "predicted_concentration_ppm", "typical_error_ppm",
-                  "flags", "warning", "error", "image_url"]
-ROW_KEYS = {"file_name", "page", "status", "error", "R", "G", "B", "predicted_concentration_ppm", "typical_error_ppm",
-            "flags", "warning", "image_url"}
+EXPORT_COLUMNS = ["file_name", "page", "status", "R", "G", "B", "predicted_concentration_mg_L", "expected_error_mg_L",
+                  "model_status", "flags", "warning", "error", "image_url"]
+ROW_KEYS = {"file_name", "page", "status", "error", "R", "G", "B", "predicted_concentration_mg_L", "expected_error_mg_L",
+            "model_status", "model_status_text", "flags", "warning", "image_url"}
 
 
 def finished_job(client, response):
@@ -26,16 +26,16 @@ def results_of(client, job_id):
     return client.get(f"/api/jobs/{job_id}/results").json()["results"]
 
 
-# ---------------------------------------------------------------- health / no model needed
+# ---------------------------------------------------------------- health / the ANN needs no model file
 def test_health_reports_mongo_cloudinary_and_model(client):
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok", "mongo": "ok", "cloudinary": "ok", "model": "missing"}
+    assert r.json() == {"status": "ok", "mongo": "ok", "cloudinary": "ok", "model_type": "ann", "model": "loaded"}
 
 
-def test_prediction_completes_without_a_model_and_leaves_concentration_empty(client, tmp_path):
+def test_prediction_completes_with_no_model_file_in_ann_mode(client, tmp_path):
     import config
-    assert not config.MODEL_DIR.exists()                         # no model file anywhere
+    assert config.MODEL_TYPE == "ann" and not config.MODEL_DIR.exists()      # the ANN needs no model file
     png = make_photo_png()
     job_id, job = finished_job(client, upload(client, [("tube.png", png)]))
     assert job["status"] == "done" and job["total"] == 1 and job["processed"] == 1
@@ -45,7 +45,11 @@ def test_prediction_completes_without_a_model_and_leaves_concentration_empty(cli
     assert set(body) == {"job_id", "status", "results"}
     row = body["results"][0]
     assert set(row) == ROW_KEYS and row["status"] == "ok" and row["page"] is None and row["error"] == ""
-    assert row["predicted_concentration_ppm"] is None and row["typical_error_ppm"] is None   # no model: empty
+    import concentration_ann
+    expected = concentration_ann.predict(row["R"], row["G"])               # the ANN, from the numbers the row shows
+    assert row["predicted_concentration_mg_L"] == expected["predicted_concentration_mg_L"]
+    assert row["expected_error_mg_L"] == 17.78 and row["model_status"] == expected["status"]
+    assert all(w in row["warning"] for w in expected["warnings"])              # the ANN's warnings are the notes
 
     # the same file measured straight with the script: R, G, B are its trimmed means, rounded to 2 decimals
     path = tmp_path / "direct.png"
@@ -172,7 +176,7 @@ def test_cloudinary_not_configured_skips_uploads(client, monkeypatch, cloud):
     assert client.get("/api/health").json()["cloudinary"] == "not_configured"
     job_id, job = finished_job(client, upload(client, [("tube.png", make_photo_png())]))
     row = results_of(client, job_id)[0]
-    assert job["status"] == "done" and row["image_url"] is None and row["warning"] == ""
+    assert job["status"] == "done" and row["image_url"] is None and "image not stored" not in row["warning"]
     assert cloud["uploads"] == []
 
 

@@ -43,3 +43,10 @@ MAX_PDF_PAGES = _int_env("MAX_PDF_PAGES", 50)
 
 # Folder that holds concentration_model.json (a relative path is relative to the backend folder)
 MODEL_DIR = (BASE_DIR / os.getenv("MODEL_DIR", "model")).resolve()
+
+# Which concentration model gives the predictions: "ann" (default; the fixed ANN, no model file, cannot be trained)
+# or "linear" (the model trained in the app from a CSV or XLSX). Read when a request is handled.
+MODEL_TYPES = ("ann", "linear")
+MODEL_TYPE = os.getenv("MODEL_TYPE", "ann").strip().lower() or "ann"
+if MODEL_TYPE not in MODEL_TYPES:
+    raise ValueError(f"MODEL_TYPE must be 'ann' or 'linear', got {MODEL_TYPE!r} (check backend/.env)")

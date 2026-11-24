@@ -14,6 +14,12 @@ import training
 from conftest import (TRUE_G, TRUE_INTERCEPT, TRUE_R, csv_bytes, levels_rows, make_photo_png, make_small_png,
                       table_rows, train, trained_client_session, true_ppm, upload, wait_training, xlsx_bytes)
 
+
+@pytest.fixture(autouse=True)
+def linear_mode(monkeypatch):
+    """The ANN is fixed and cannot be trained: these tests are about the linear model."""
+    monkeypatch.setattr(config, "MODEL_TYPE", "linear")
+
 TOLERANCE = 1e-6          # the synthetic data follow the relation exactly
 
 
@@ -59,12 +65,12 @@ def test_one_row_per_concentration_is_accepted(client):
 
 def test_the_apps_own_result_csv_is_valid_once_a_concentration_column_is_added(client):
     # a results file as the app downloads it, plus the user's concentration_ppm column; failed rows are ignored
-    header = ["file_name", "page", "status", "R", "G", "B", "predicted_concentration_ppm", "typical_error_ppm",
-              "flags", "warning", "error", "image_url", "concentration_ppm"]
+    header = ["file_name", "page", "status", "R", "G", "B", "predicted_concentration_mg_L", "expected_error_mg_L",
+              "model_status", "flags", "warning", "error", "image_url", "concentration_ppm"]
     lines = [header]
     for i, p in enumerate((0, 100, 200, 300, 400)):
-        lines.append([f"p{i}.jpg", "", "ok", 230 - p / 10, 200 - p / 5, 20, "", "", "", "", "", "", p])
-    lines.append(["bad.jpg", "", "failed", "", "", "", "", "", "failed", "", "no tube found", "", 100])
+        lines.append([f"p{i}.jpg", "", "ok", 230 - p / 10, 200 - p / 5, 20, "", "", "", "", "", "", "", p])
+    lines.append(["bad.jpg", "", "failed", "", "", "", "", "", "", "failed", "", "no tube found", "", 100])
     buf = io.StringIO()
     csv.writer(buf).writerows(lines)
     r = train(client, "results.csv", buf.getvalue().encode("utf-8"))
@@ -189,7 +195,7 @@ def test_four_or_more_concentrations_are_validated_leave_one_out(client):
     trained_client_session(client)
     m = model_file()
     assert m["validated"] is True and m["validation"] == "leave-one-concentration-out"
-    assert m["typical_error_ppm"] < 1e-6                         # exact data: no error
+    assert m["typical_error_ppm"] < 1e-6                           # exact data: no error
     assert [c["features"] for c in m["candidates"]] == [["R", "G"], ["R"], ["G"], ["R", "G", "B"]]
     assert all(c["RMSE_ppm"] is not None for c in m["candidates"])
 
@@ -256,11 +262,11 @@ def test_prediction_with_a_model_returns_concentration_and_error(client):
     assert model_file()["features"] == ["R"]
     r = upload(client, [("tube.png", make_photo_png())])               # a photo with R about 220
     row = client.get(f"/api/jobs/{r.json()['job_id']}/results").json()["results"][0]
-    assert row["status"] == "ok" and 195 <= row["predicted_concentration_ppm"] <= 205
-    assert row["typical_error_ppm"] is not None and row["warning"] == ""
+    assert row["status"] == "ok" and 195 <= row["predicted_concentration_mg_L"] <= 205
+    assert row["expected_error_mg_L"] is not None and row["warning"] == ""
     csv_text = client.get(f"/api/jobs/{r.json()['job_id']}/download?format=csv").text
     parsed = list(csv.DictReader(io.StringIO(csv_text)))[0]
-    assert float(parsed["predicted_concentration_ppm"]) == row["predicted_concentration_ppm"]
+    assert float(parsed["predicted_concentration_mg_L"]) == row["predicted_concentration_mg_L"]
 
 
 def test_photo_outside_the_training_range_is_flagged_but_still_predicted(client):
@@ -270,7 +276,7 @@ def test_photo_outside_the_training_range_is_flagged_but_still_predicted(client)
     r = upload(client, [("far.png", far), ("near.png", make_photo_png())])
     out = {x["file_name"]: x for x in client.get(f"/api/jobs/{r.json()['job_id']}/results").json()["results"]}
     assert out["far.png"]["warning"] == "outside training range: R"
-    assert out["far.png"]["predicted_concentration_ppm"] is not None
+    assert out["far.png"]["predicted_concentration_mg_L"] is not None
     assert out["near.png"]["warning"] == ""
 
 

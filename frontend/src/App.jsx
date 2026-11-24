@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { MAX_FILE_MB, createJob, getCurrentModel, getHealth, getJob, getResults } from "./api.js";
+import { MAX_FILE_MB, createJob, getHealth, getJob, getModelInfo, getResults } from "./api.js";
 import { initialRun, keysFor, pendingIds, progressOf, runBlockReason, runReducer } from "./runState.js";
 import { uploadFiles } from "./uploader.js";
 import { prepareImage } from "./resizeImage.js";
@@ -9,7 +9,7 @@ import Banner from "./components/Banner.jsx";
 import TopBar from "./components/TopBar.jsx";
 import InputCard from "./components/InputCard.jsx";
 import ResultsCard from "./components/ResultsCard.jsx";
-import TrainCard from "./components/TrainCard.jsx";
+import ModelCards from "./components/ModelCards.jsx";
 
 export default function App() {
   const [health, setHealth] = useState(null);
@@ -45,16 +45,16 @@ export default function App() {
     }
   }, []);
 
-  // The loaded concentration model (null when there is none yet). Also called after a training.
-  // It is not shown in the header; the Results table and the Train card use it.
+  // The active model ({ model_type, model_version, features, expected_error_mg_L, trainable }), shown in the header.
+  // The Train card is only shown for the linear model. Also called after a training.
   const refreshModel = useCallback(async () => {
     modelCtl.current?.abort();
     const ctl = new AbortController();
     modelCtl.current = ctl;
     try {
-      setModel(await getCurrentModel(ctl.signal));
+      setModel(await getModelInfo(ctl.signal));
     } catch (e) {
-      if (e.name !== "AbortError") setModel(null);     // 404 = no model; a network problem shows in the health banner
+      if (e.name !== "AbortError") setModel(null);     // a network problem shows in the health banner
     }
   }, []);
 
@@ -135,16 +135,16 @@ export default function App() {
   return (
     <div className="app">
       <div className="stage">
-        <TopBar dbDown={health?.mongo === "error"} backendError={healthError} />
+        <TopBar dbDown={health?.mongo === "error"} backendError={healthError} model={model} />
         <Banner health={health} healthError={healthError} onRecheck={refreshAll} />
         <main className="columns">
         <InputCard items={items} setItems={setItems} onRun={startRun} onClear={clear} blockReason={blockReason}
           phase={run.phase} statuses={run.files} done={done} total={total} percent={percent}
           skipped={skipped} tooBig={tooBig} error={error || fileError} />
-        <ResultsCard jobId={jobId} job={shownJob} results={results} hasModel={!!model} files={files} />
+        <ResultsCard jobId={jobId} job={shownJob} results={results} files={files} />
         </main>
       </div>
-      <TrainCard onTrained={refreshModel} />
+      <ModelCards model={model} onTrained={refreshModel} />
     </div>
   );
 }

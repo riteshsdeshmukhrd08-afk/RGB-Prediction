@@ -59,7 +59,9 @@ def test_run_with_unreachable_database_gives_503(client, error):
     assert r.status_code == 503 and r.json() == {"detail": NO_DB}
 
 
-def test_training_start_with_unreachable_database_gives_503(client):
+def test_training_start_with_unreachable_database_gives_503(client, monkeypatch):
+    import config
+    monkeypatch.setattr(config, "MODEL_TYPE", "linear")      # training only exists in linear mode
     from conftest import csv_bytes, table_rows, train
     import training
     break_db(TIMEOUT)
@@ -81,5 +83,5 @@ def test_health_still_200_and_gives_the_reason(client):
     r = client.get("/api/health")
     assert r.status_code == 200
     body = r.json()
-    assert body["mongo"] == "error" and body["model"] == "missing"
+    assert body["mongo"] == "error" and body["model"] == "loaded" and body["model_type"] == "ann"
     assert body["mongo_error"].startswith("ServerSelectionTimeoutError")

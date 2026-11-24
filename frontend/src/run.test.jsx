@@ -149,8 +149,8 @@ describe("mergeJobs and the combined results", () => {
     rows[1] = { ...rows[1], file_name: "=cmd|x", warning: 'a "quoted", note' };
     const lines = csvFromResults(rows).trimEnd().split("\n");
     expect(lines).toHaveLength(25);
-    expect(lines[0]).toBe("file_name,page,status,R,G,B,predicted_concentration_ppm,typical_error_ppm,flags,warning,error,image_url");
-    expect(lines[1]).toBe("p1.jpg,,ok,201,100,50,,,,,,");
+    expect(lines[0]).toBe("file_name,page,status,R,G,B,predicted_concentration_mg_L,expected_error_mg_L,model_status,flags,warning,error,image_url");
+    expect(lines[1]).toBe("p1.jpg,,ok,201,100,50,,,,,,,");
     expect(lines[2]).toContain("'=cmd|x");
     expect(lines[2]).toContain('"a ""quoted"", note"');
   });
