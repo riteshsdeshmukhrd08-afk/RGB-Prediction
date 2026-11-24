@@ -2,6 +2,7 @@ import { downloadUrl } from "../api.js";
 import { downloadCsv } from "../csvExport.js";
 import { DownloadIcon, TableIcon } from "./Icons.jsx";
 
+const fmt = (v) => (v == null ? "—" : Number(v).toFixed(2));          // R, G, B: two decimals
 const num = (v) => (v == null ? "—" : Number(v).toFixed(1));
 
 export const NOT_VALID = "NOT_VALID_OUTSIDE_CALIBRATED_RANGE";
@@ -26,13 +27,11 @@ function whyEmpty(r, what) {
   return "No model loaded: nothing to predict with (train the linear model first)";
 }
 
-const noError = (r) => r.expected_error_mg_L == null || r.model_status === NOT_VALID;
-
-// The tooltip of a row (on the concentration and on the status): the file, the ± error, why a value is empty,
-// the reason a photo failed, the notes and the flags. The table itself shows only the concentration and the status.
+// The tooltip of the concentration value: the status ("Review"), then why a value is empty, the failure reason, the notes and
+// the flags. The expected error is not shown on screen.
 export function rowTooltip(r) {
-  const lines = [r.file_name + (r.page ? ` (page ${r.page})` : "")];
-  lines.push(`± ${noError(r) ? "—" : num(r.expected_error_mg_L) + " mg/L"}`);
+  const [, label] = statusPill(r);
+  const lines = [label];
   if (r.predicted_concentration_mg_L == null) lines.push(whyEmpty(r, "value"));
   if (r.error) lines.push("Error: " + r.error);
   if (r.warning) lines.push("Notes: " + r.warning);
@@ -40,10 +39,26 @@ export function rowTooltip(r) {
   return lines.join(String.fromCharCode(10));
 }
 
-// Two columns. The styles key on the class, not on the column's position.
+// The Image column: the file's name (cut off with an ellipsis, the full name in the tooltip) and the "Open" link.
+// No link without an image URL; "—" without a file name.
+function ImageCell({ r }) {
+  const name = r.file_name ? r.file_name + (r.page ? ` (page ${r.page})` : "") : "";
+  if (!name) return "—";
+  return (
+    <span className="image-cell">
+      <span className="image-name mono" title={name}>{name}</span>
+      {r.image_url && <a href={r.image_url} target="_blank" rel="noreferrer">Open</a>}
+    </span>
+  );
+}
+
+// Five columns. The styles key on the class, not on the column's position. Only the concentration has a tooltip.
 const COLUMNS = [
-  { cls: "c-conc num", label: "Concentration (mg/L)", cell: (r) => num(r.predicted_concentration_mg_L) },
-  { cls: "c-status", label: "Status", cell: (r) => { const [tone, label] = statusPill(r); return <span className={"pill " + tone}>{label}</span>; } },
+  { cls: "c-rgb num", label: "R", cell: (r) => fmt(r.R) },
+  { cls: "c-rgb num", label: "G", cell: (r) => fmt(r.G) },
+  { cls: "c-rgb num", label: "B", cell: (r) => fmt(r.B) },
+  { cls: "c-conc num", label: "COD (mg/L)", title: rowTooltip, cell: (r) => num(r.predicted_concentration_mg_L) },
+  { cls: "c-image", label: "Image", cell: (r) => <ImageCell r={r} /> },
 ];
 
 export default function ResultsCard({ jobId, job, results, files = [] }) {
@@ -95,7 +110,7 @@ export default function ResultsCard({ jobId, job, results, files = [] }) {
             <tbody>
               {results.map((r, i) => (
                 <tr key={i} className={r.status === "failed" ? "row-failed" : ""}>
-                  {COLUMNS.map((c) => <td key={c.label} className={c.cls} title={rowTooltip(r)}>{c.cell(r, i)}</td>)}
+                  {COLUMNS.map((c) => <td key={c.label} className={c.cls} title={c.title?.(r)}>{c.cell(r, i)}</td>)}
                 </tr>
               ))}
             </tbody>
