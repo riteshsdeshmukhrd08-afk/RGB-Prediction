@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup as html } from "react-dom/server";
 import ResultsCard from "./components/ResultsCard.jsx";
 import TopBar from "./components/TopBar.jsx";
+import Banner from "./components/Banner.jsx";
 import ModelCards from "./components/ModelCards.jsx";
 import { CompareResult, COMPARE_NOTE } from "./components/CompareCard.jsx";
 import { modelLabel } from "./modelInfo.js";
@@ -16,6 +17,18 @@ const results = [
 const ANN = { model_type: "ann", model_name: "ANN v1.1", features: ["R", "G"], expected_error_mg_L: 33.93783767886789, trainable: false };
 const LINEAR = { model_type: "linear", model_version: "abc123def456", features: ["R", "G"], expected_error_mg_L: 12.5, trainable: true };
 const UNTRAINED = { model_type: "linear", model_version: null, features: [], expected_error_mg_L: null, trainable: true };
+
+describe("Banner", () => {
+  it("says so when the ANN model could not be loaded, with the reason", () => {
+    const m = html(<Banner health={{ mongo: "ok", model: "unavailable", model_error: "Model file not found: ann_v1_1.joblib" }} healthError={null} onRecheck={() => {}} />);
+    expect(m).toContain("The ANN model is not loaded on the server");
+    expect(m).toContain("Model file not found: ann_v1_1.joblib");
+  });
+  it("shows nothing when the model is loaded (or the linear model is simply not trained)", () => {
+    expect(html(<Banner health={{ mongo: "ok", model: "loaded" }} healthError={null} onRecheck={() => {}} />)).toBe("");
+    expect(html(<Banner health={{ mongo: "ok", model: "missing" }} healthError={null} onRecheck={() => {}} />)).toBe("");
+  });
+});
 
 describe("Top bar", () => {
   it("shows the active ANN model with its expected error", () => {

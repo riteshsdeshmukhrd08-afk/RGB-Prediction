@@ -1,4 +1,6 @@
-// Shown when the backend is unreachable or MongoDB is down.
+// Shown when the backend is unreachable, MongoDB is down, or the ANN model file could not be loaded.
+export const MODEL_UNAVAILABLE_TEXT = "The ANN model is not loaded on the server, so no concentration can be predicted.";
+
 export default function Banner({ health, healthError, onRecheck }) {
   let text = "";
   let detail = "";
@@ -7,6 +9,9 @@ export default function Banner({ health, healthError, onRecheck }) {
   } else if (health?.mongo === "error") {
     text = "Database not reachable. Check the backend terminal.";
     detail = health.mongo_error || "";
+  } else if (health?.model === "unavailable") {
+    text = MODEL_UNAVAILABLE_TEXT;
+    detail = health.model_error || "";
   }
   if (!text) return null;
   return (
