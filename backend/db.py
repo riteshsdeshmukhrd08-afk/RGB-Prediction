@@ -53,6 +53,10 @@ def results():
     return database()["results"]
 
 
+def train_jobs():
+    return database()["train_jobs"]
+
+
 def ensure_indexes():
     """Create the indexes once. Safe to call again; failures are only logged."""
     global _indexed, _last_index_try
@@ -67,6 +71,7 @@ def ensure_indexes():
         # One job per Idempotency-Key. Partial: jobs created without a key (older ones too) are not indexed.
         jobs().create_index([("idempotency_key", ASCENDING)], unique=True, name="idempotency_key_unique",
                             partialFilterExpression={"idempotency_key": {"$exists": True}})
+        train_jobs().create_index([("created_at", DESCENDING)])
         _indexed = True
     except Exception as e:
         log.warning("Could not create indexes yet: %s", type(e).__name__)

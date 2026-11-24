@@ -1,3 +1,21 @@
-# Not needed by the deployed API function (tests and local helper scripts).
+# Not needed by the deployed API function. models/ann_v1_1.joblib MUST stay included (it is not listed here).
+# tests and local helper scripts
 tests/
 scripts/
+pytest.ini
+requirements-dev.txt
+# local environment, caches, secrets, local data
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.env.*
+!.env.example
+data/
+model/
+# notebooks and docs
+*.ipynb
+.ipynb_checkpoints/
+README.md

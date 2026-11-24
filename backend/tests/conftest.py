@@ -77,6 +77,7 @@ def cloud(monkeypatch):
 
 
 def _start(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "MODEL_DIR", tmp_path / "model")
     db.client = mongomock.MongoClient()
     db._indexed = False
     return TestClient(app)
@@ -84,9 +85,72 @@ def _start(monkeypatch, tmp_path):
 
 @pytest.fixture
 def client(monkeypatch, tmp_path, cloud):
-    """The app, with the fixed COD model loaded at startup (the real file in backend/models)."""
+    """The app with no concentration model loaded."""
     with _start(monkeypatch, tmp_path) as c:
         yield c
+
+
+# ---- training tables with a KNOWN relation:  concentration = 250 + 3*R - 2*G  (exactly)
+TRUE_INTERCEPT, TRUE_R, TRUE_G = 250.0, 3.0, -2.0
+
+
+def true_ppm(r, g):
+    return TRUE_INTERCEPT + TRUE_R * r + TRUE_G * g
+
+
+def table_rows(n=24, seed=1):
+    """n rows (concentration_ppm, R, G, B). R, G vary freely; the concentration follows the relation exactly."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for i in range(n):
+        r, g = round(float(rng.uniform(100, 250)), 2), round(float(rng.uniform(80, 220)), 2)
+        rows.append({"file_name": f"p{i}.jpg", "concentration_ppm": round(true_ppm(r, g), 4),
+                     "R": r, "G": g, "B": round(float(rng.uniform(0, 60)), 2)})
+    return rows
+
+
+def csv_bytes(rows, columns=None):
+    import pandas as pd
+    df = pd.DataFrame(rows)
+    return df[columns].to_csv(index=False).encode("utf-8") if columns else df.to_csv(index=False).encode("utf-8")
+
+
+def xlsx_bytes(rows):
+    import pandas as pd
+    buf = io.BytesIO()
+    pd.DataFrame(rows).to_excel(buf, index=False)
+    return buf.getvalue()
+
+
+def levels_rows(levels, per=3):
+    """Rows for a few distinct concentrations (R falls as the concentration rises), `per` rows each."""
+    return [{"concentration_ppm": ppm, "R": 230 - ppm / 10 + k, "G": 200 - ppm / 5 - k, "B": 20.0}
+            for ppm in levels for k in range(per)]
+
+
+def train(client, name, data):
+    """POST one table to /api/train."""
+    return client.post("/api/train", files={"file": (name, data, "application/octet-stream")})
+
+
+def wait_training(client, job_id, timeout=30):
+    import time
+    end = time.time() + timeout
+    while time.time() < end:
+        job = client.get(f"/api/train/{job_id}").json()
+        if job["status"] in ("done", "failed"):
+            return job
+        time.sleep(0.05)
+    raise AssertionError("training did not finish in time")
+
+
+def trained_client_session(client, rows=None):
+    """Train the model on a known table; returns the finished job."""
+    r = train(client, "known.csv", csv_bytes(rows or table_rows()))
+    assert r.status_code == 202, r.text
+    job = wait_training(client, r.json()["job_id"])
+    assert job["status"] == "done", job
+    return job
 
 
 def upload(client, files):

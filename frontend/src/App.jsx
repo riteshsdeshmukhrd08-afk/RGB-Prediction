@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { MAX_FILE_MB, createJob, getHealth, getJob, getResults } from "./api.js";
+import { MAX_FILE_MB, createJob, getHealth, getJob, getModelInfo, getResults } from "./api.js";
 import { initialRun, keysFor, pendingIds, progressOf, runBlockReason, runReducer } from "./runState.js";
 import { uploadFiles } from "./uploader.js";
 import { prepareImage } from "./resizeImage.js";
@@ -9,10 +9,12 @@ import Banner from "./components/Banner.jsx";
 import TopBar from "./components/TopBar.jsx";
 import InputCard from "./components/InputCard.jsx";
 import ResultsCard from "./components/ResultsCard.jsx";
+import ModelCards from "./components/ModelCards.jsx";
 
 export default function App() {
   const [health, setHealth] = useState(null);
   const [healthError, setHealthError] = useState(null);
+  const [model, setModel] = useState(null);
 
   const [items, setItems] = useState([]);
   const [run, dispatch] = useReducer(runReducer, initialRun);   // idle -> running -> done | error, plus one status per file
@@ -24,6 +26,7 @@ export default function App() {
   const sendCtl = useRef(null);
   const runningRef = useRef(false);                             // closes the gap between a click and the next render
   const healthCtl = useRef(null);
+  const modelCtl = useRef(null);
 
   // one backend job per uploaded file (each request must stay small)
   const jobIds = useMemo(() => [...new Set(Object.values(run.files).map((f) => f.jobId).filter(Boolean))], [run.files]);
@@ -42,10 +45,25 @@ export default function App() {
     }
   }, []);
 
+  // The active model ({ model_type, model_name, features, expected_error_mg_L, trainable }), shown in the header.
+  // The Train card is only shown for the linear model. Also called after a training.
+  const refreshModel = useCallback(async () => {
+    modelCtl.current?.abort();
+    const ctl = new AbortController();
+    modelCtl.current = ctl;
+    try {
+      setModel(await getModelInfo(ctl.signal));
+    } catch (e) {
+      if (e.name !== "AbortError") setModel(null);     // a network problem shows in the health banner
+    }
+  }, []);
+
+  const refreshAll = useCallback(() => { refreshHealth(); refreshModel(); }, [refreshHealth, refreshModel]);
+
   useEffect(() => {
-    refreshHealth();
-    return () => { healthCtl.current?.abort(); sendCtl.current?.abort(); };
-  }, [refreshHealth]);
+    refreshAll();
+    return () => { healthCtl.current?.abort(); modelCtl.current?.abort(); sendCtl.current?.abort(); };
+  }, [refreshAll]);
 
   useEffect(() => { if (run.phase !== "running") runningRef.current = false; }, [run.phase]);
 
@@ -117,8 +135,8 @@ export default function App() {
   return (
     <div className="app">
       <div className="stage">
-        <TopBar dbDown={health?.mongo === "error"} backendError={healthError} />
-        <Banner health={health} healthError={healthError} onRecheck={refreshHealth} />
+        <TopBar dbDown={health?.mongo === "error"} backendError={healthError} model={model} />
+        <Banner health={health} healthError={healthError} onRecheck={refreshAll} />
         <main className="columns">
         <InputCard items={items} setItems={setItems} onRun={startRun} onClear={clear} blockReason={blockReason}
           phase={run.phase} statuses={run.files} done={done} total={total} percent={percent}
@@ -126,6 +144,7 @@ export default function App() {
         <ResultsCard jobId={jobId} job={shownJob} results={results} files={files} />
         </main>
       </div>
+      <ModelCards model={model} onTrained={refreshModel} />
     </div>
   );
 }

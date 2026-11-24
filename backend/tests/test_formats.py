@@ -34,7 +34,7 @@ def test_every_format_gives_an_ok_row(client, fmt, tmp_path):
     assert r.json()["skipped"] == []
     job_id = r.json()["job_id"]
     row = client.get(f"/api/jobs/{job_id}/results").json()["results"][0]
-    assert row["status"] in ("ok", "outside_range"), row["error"]
+    assert row["status"] == "ok", row["error"]
     assert all(row[k] is not None for k in "RGB")
 
     if fmt == "JPEG":                           # JPEG goes to measure_photo untouched: results must be identical
@@ -64,4 +64,4 @@ def test_undecodable_image_becomes_failed_row_not_skip(client):
     assert r.json()["skipped"] == [] and r.json()["accepted"] == 2
     rows = {x["file_name"]: x for x in client.get(f"/api/jobs/{r.json()['job_id']}/results").json()["results"]}
     assert rows["cut.png"]["status"] == "failed" and rows["cut.png"]["error"]
-    assert rows["ok.png"]["status"] in ("ok", "outside_range")
+    assert rows["ok.png"]["status"] == "ok"

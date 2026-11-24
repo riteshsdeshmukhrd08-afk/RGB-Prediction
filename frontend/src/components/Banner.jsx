@@ -1,6 +1,5 @@
-// Shown when the backend is unreachable, MongoDB is down, or the server could not load the COD model.
-export const MODEL_MISSING_TEXT = "The COD model is not loaded on the server.";
-export const MODEL_MISSING_DETAIL = "Photos are still measured (R, G, B), but no COD is shown until the model file is loaded. Check the backend log.";
+// Shown when the backend is unreachable, MongoDB is down, or the ANN model file could not be loaded.
+export const MODEL_UNAVAILABLE_TEXT = "The ANN model is not loaded on the server, so no concentration can be predicted.";
 
 export default function Banner({ health, healthError, onRecheck }) {
   let text = "";
@@ -10,9 +9,9 @@ export default function Banner({ health, healthError, onRecheck }) {
   } else if (health?.mongo === "error") {
     text = "Database not reachable. Check the backend terminal.";
     detail = health.mongo_error || "";
-  } else if (health?.model === "missing") {
-    text = MODEL_MISSING_TEXT;
-    detail = MODEL_MISSING_DETAIL;
+  } else if (health?.model === "unavailable") {
+    text = MODEL_UNAVAILABLE_TEXT;
+    detail = health.model_error || "";
   }
   if (!text) return null;
   return (
