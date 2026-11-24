@@ -4,7 +4,7 @@ import ResultsCard, { rowTooltip, statusPill } from "./components/ResultsCard.js
 import TopBar from "./components/TopBar.jsx";
 import Banner from "./components/Banner.jsx";
 import App from "./App.jsx";
-import { MODEL_DISPLAY_NAME, modelLabel } from "./modelInfo.js";
+import { readFileSync } from "node:fs";
 import { csvFromResults } from "./csvExport.js";
 
 const job = { status: "done", processed: 2, total: 2 };
@@ -13,9 +13,6 @@ const results = [
   { file_name: "b.pdf", page: 2, status: "failed", error: "no tube", R: null, G: null, B: null, predicted_concentration_mg_L: null, expected_error_mg_L: null, model_status: null, model_status_text: "", flags: "failed", warning: "", image_url: null },
 ];
 
-const ANN = { model_type: "ann", model_name: "ANN v1.1", features: ["R", "G"], expected_error_mg_L: 33.93783767886789, trainable: false };
-const LINEAR = { model_type: "linear", model_version: "abc123def456", features: ["R", "G"], expected_error_mg_L: 12.5, trainable: true };
-const UNTRAINED = { model_type: "linear", model_version: null, features: [], expected_error_mg_L: null, trainable: true };
 
 describe("Banner", () => {
   it("says so when the ANN model could not be loaded, with the reason", () => {
@@ -30,23 +27,15 @@ describe("Banner", () => {
 });
 
 describe("Top bar", () => {
-  it("shows the model name from one constant, with no error value", () => {
-    const m = html(<TopBar dbDown={false} backendError={null} model={ANN} />);
-    expect(m).toContain("RGB measurement");
-    expect(m).toContain("Model: RGB prediction model");
-    expect(MODEL_DISPLAY_NAME).toBe("RGB prediction model");
-    expect(m).not.toMatch(/±|33\.9|mg\/L/);
-    expect(modelLabel(ANN)).toBe(`Model: ${MODEL_DISPLAY_NAME}`);
-  });
-  it("shows the linear model's details, or that it is not trained yet", () => {
-    expect(html(<TopBar dbDown={false} backendError={null} model={LINEAR} />)).toContain("Model: linear (R, G)");
-    expect(html(<TopBar dbDown={false} backendError={null} model={UNTRAINED} />)).toContain("Model: linear · not trained yet");
-    expect(modelLabel(null)).toBe("");
-  });
-  it("shows no model chip until the model is known", () => {
+  it("shows the heading and the subtitle, and no model badge", () => {
     const m = html(<TopBar dbDown={false} backendError={null} />);
-    expect(m).not.toContain("Model:");
-    expect(m).not.toMatch(/class="chip /);                   // no chip at all when everything is fine
+    expect(m).toContain("<h1>RGB measurement and COD prediction</h1>");
+    expect(m).toContain("Colour readings of liquid in vial photos, with the predicted concentration");
+    expect(m).not.toMatch(/Model:|class="chip |±|mg\/L/);                  // no chip at all when everything is fine
+  });
+  it("the tab title is the same text", () => {
+    const index = readFileSync(new URL("../index.html", import.meta.url), "utf-8");
+    expect(index).toContain("<title>RGB measurement and COD prediction</title>");
   });
   it("shows a red chip when the database or the backend is down", () => {
     expect(html(<TopBar dbDown backendError={null} />)).toMatch(/class="chip bad"[^>]*>.*Database not reachable/);
@@ -65,20 +54,20 @@ describe("The page", () => {
     }
     expect(m.match(/<section/g)).toHaveLength(2);                 // only the two panels
   });
-  it("still renders the top bar with the model name, and the table", () => {
-    expect(html(<TopBar dbDown={false} backendError={null} model={ANN} />)).toContain("Model: RGB prediction model");
+  it("has no model badge on the page, and still renders the table", () => {
+    expect(html(<App />)).not.toContain("Model:");
     expect(html(<ResultsCard jobId="j" job={job} results={results} />)).toContain('class="results-table"');
   });
 });
 
 describe("Results table", () => {
-  it("has exactly five columns: R, G, B, Concentration (mg/L), Image", () => {
+  it("has exactly five columns: R, G, B, COD (mg/L), Image", () => {
     const m = html(<ResultsCard jobId="j" job={job} results={results} />);
     const heads = [...m.matchAll(/<th class="[^"]*">([^<]*)<\/th>/g)].map((x) => x[1]);
-    expect(heads).toEqual(["R", "G", "B", "Concentration (mg/L)", "Image"]);
+    expect(heads).toEqual(["R", "G", "B", "COD (mg/L)", "Image"]);
     expect(m.match(/<tbody>.*?<\/tr>/s)[0].match(/<td class="/g)).toHaveLength(5);       // one cell per heading
     expect([...m.matchAll(/<th class="([^"]+)"/g)].map((x) => x[1])).toEqual(["c-rgb num", "c-rgb num", "c-rgb num", "c-conc num", "c-image"]);
-    for (const gone of ["Page", "Colour", "± error", "Status", "swatch", "(ppm)", "COD"]) expect(m).not.toContain(gone);
+    for (const gone of ["Page", "Colour", "± error", "Status", "Concentration (mg/L)", "swatch", "(ppm)"]) expect(m).not.toContain(gone);
   });
   it("shows R, G, B with two decimals and the concentration with one", () => {
     const m = html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], predicted_concentration_mg_L: 200 }]} />);
@@ -87,12 +76,26 @@ describe("Results table", () => {
   });
   it("shows a dash when there is no value, R, G or B", () => {
     const m = html(<ResultsCard jobId="j" job={job} results={[results[1]]} />);
-    expect(m.match(/<tbody>.*<\/tbody>/s)[0].match(/>—</g)).toHaveLength(5);              // R, G, B, concentration, image
+    expect(m.match(/<tbody>.*<\/tbody>/s)[0].match(/>—</g)).toHaveLength(4);              // R, G, B, COD: a dash each
+    expect(m).toContain('title="b.pdf (page 2)">b.pdf (page 2)</span>');   // the failed file's name still shows
   });
-  it("shows Open as a link to the image in a new tab, and a dash without an image URL", () => {
-    const withImage = html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], image_url: "https://x.example/a.jpg" }]} />);
-    expect(withImage).toContain('<td class="c-image"><a href="https://x.example/a.jpg" target="_blank" rel="noreferrer">Open</a></td>');
-    expect(html(<ResultsCard jobId="j" job={job} results={[results[0]]} />)).toContain('<td class="c-image">—</td>');
+  it("shows the file name and the Open link (new tab) in the Image column", () => {
+    const row = { ...results[0], image_url: "https://x.example/a.jpg" };
+    const m = html(<ResultsCard jobId="j" job={job} results={[row]} />);
+    expect(m).toContain('<td class="c-image"><span class="image-cell"><span class="image-name mono" title="a.jpg">a.jpg</span><a href="https://x.example/a.jpg" target="_blank" rel="noreferrer">Open</a></span></td>');
+  });
+  it("shows the file name without a link when there is no image URL, and a dash without a file name", () => {
+    const m = html(<ResultsCard jobId="j" job={job} results={[results[0]]} />);
+    expect(m).toContain('<span class="image-name mono" title="a.jpg">a.jpg</span></span></td>');
+    expect(m).not.toContain(">Open<");
+    expect(html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], file_name: "", image_url: null }]} />)).toContain('<td class="c-image">—</td>');
+  });
+  it("gives a long file name its full text in the tooltip (the style cuts it off with an ellipsis)", () => {
+    const long = "a_very_long_photo_name_".repeat(6) + "end.jpg";
+    const m = html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], file_name: long }]} />);
+    expect(m).toContain(`title="${long}">${long}</span>`);
+    const css = readFileSync(new URL("./styles.css", import.meta.url), "utf-8");
+    expect(css).toMatch(/\.image-name \{[^}]*overflow: hidden; text-overflow: ellipsis; white-space: nowrap/);
   });
   it("shows the status in the concentration tooltip, without the expected error", () => {
     const review = { ...results[0], predicted_concentration_mg_L: 387.6, expected_error_mg_L: 33.93783767886789, model_status: "REVIEW" };
@@ -102,7 +105,7 @@ describe("Results table", () => {
   });
   it("shows the expected error of a single result nowhere on screen", () => {
     const row = { ...results[0], predicted_concentration_mg_L: 387.6, expected_error_mg_L: 33.93783767886789, model_status: "REVIEW", warning: "w", flags: "clipped", image_url: "https://x.example/a.jpg" };
-    const screens = [html(<TopBar dbDown={false} backendError={null} model={ANN} />),
+    const screens = [html(<TopBar dbDown={false} backendError={null} />),
       html(<ResultsCard jobId="j" job={job} results={[row, results[1]]} />)];
     for (const m of screens) expect(m).not.toMatch(/±|33\.9|33\.94|12\.5/);
     expect(rowTooltip(row)).not.toMatch(/±|33\.9|mg\/L/);
@@ -131,7 +134,7 @@ describe("Results table", () => {
   it("puts the notes and flags in the tooltip, and counts flagged rows in the summary line", () => {
     const long = "Outside the calibrated region. Confirm with a standard.";
     const r = { ...results[0], model_status: "REVIEW", warning: long, flags: "clipped;high_std" };
-    expect(rowTooltip(r)).toBe(["Review", "a.jpg", "Notes: " + long, "Flags: clipped, high_std"].join(String.fromCharCode(10)));
+    expect(rowTooltip(r)).toBe(["Review", "Notes: " + long, "Flags: clipped, high_std"].join(String.fromCharCode(10)));
     const m = html(<ResultsCard jobId="j" job={job} results={[r, results[1]]} />);
     expect(m).toContain('<span class="figure"><b class="mono">1</b><span>flagged</span></span>');
   });

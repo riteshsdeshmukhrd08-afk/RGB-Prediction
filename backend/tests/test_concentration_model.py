@@ -299,3 +299,22 @@ def test_no_old_name_appears_in_the_model_or_the_source(client):
     root = Path(__file__).resolve().parent.parent
     for path in list(root.glob("*.py")) + list(root.glob("tests/*.py")) + [root / "README.md", root / ".env.example"]:
         assert not forbidden.search(path.read_text(encoding="utf-8")), path.name
+
+    # The frontend may show exactly two texts that contain the old name: the heading and the table label.
+    # Everything else in its source (not its test files) must stay free of it. The backend check above has no exception.
+    allowed = ("RGB measurement and " + "C" + "OD prediction", "C" + "OD (mg/L)")
+    front = root.parent / "frontend"
+    for path in [front / "index.html"] + [p for p in (front / "src").rglob("*") if p.suffix in (".js", ".jsx", ".css")
+                                          and ".test." not in p.name]:
+        text = path.read_text(encoding="utf-8")
+        for ok in allowed:
+            text = text.replace(ok, "")
+        assert not forbidden.search(text), path.name
+
+
+def test_the_name_check_still_fails_when_the_old_name_is_added(tmp_path):
+    forbidden = re.compile("(?<![A-Za-z])" + "c" + "od" + "(?![a-z])|" + "c" + "od" + "_|" + "c" + "od" + "-", re.I)
+    for bad in ("x = 'c" + "od_model'", "# c" + "od model", "the C" + "OD value"):
+        assert forbidden.search(bad), bad
+    for fine in ("decode(x)", "encoder", "code", "recod" + "e"):
+        assert not forbidden.search(fine), fine

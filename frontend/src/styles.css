@@ -38,7 +38,6 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
 .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent); }
 .chip.bad { color: var(--text); border-color: color-mix(in srgb, var(--bad) 50%, var(--border)); }
 .chip.bad .dot { color: var(--bad); }
-.chip.model .dot { color: var(--accent); }
 .banner { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid color-mix(in srgb, var(--bad) 50%, var(--border));
   border-radius: var(--radius); background: color-mix(in srgb, var(--bad) 10%, var(--panel)); color: var(--text); }
 .banner strong { color: var(--bad); }
@@ -187,10 +186,12 @@ tr.chosen td { color: var(--accent); font-weight: 600; background: rgba(45, 212,
 .results-table tbody tr:last-child td { border-bottom: 0; }
 .results-table .num { text-align: right; }
 .results-table td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.c-rgb { width: 18%; }
-.c-conc { width: 28%; }
-.c-image { width: 18%; }
-.c-image a { white-space: nowrap; }
+.c-rgb { width: 12%; }
+.c-conc { width: 20%; }
+.c-image { width: auto; max-width: 0; }                         /* max-width 0: the cell takes the rest and the name is cut off inside it */
+.image-cell { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.image-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.image-cell a { flex: none; white-space: nowrap; }
 
 /* ===== Modal ===== */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(5, 8, 12, .72); display: grid; place-items: center; z-index: 10; }

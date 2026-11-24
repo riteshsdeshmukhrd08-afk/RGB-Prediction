@@ -27,12 +27,11 @@ function whyEmpty(r, what) {
   return "No model loaded: nothing to predict with (train the linear model first)";
 }
 
-// The tooltip of the concentration: the status ("Review"), then the file, why a value is empty, the failure reason,
-// the notes and the flags. The expected error is not shown on screen.
+// The tooltip of the concentration value: the status ("Review"), then why a value is empty, the failure reason, the notes and
+// the flags. The expected error is not shown on screen.
 export function rowTooltip(r) {
   const [, label] = statusPill(r);
   const lines = [label];
-  lines.push(r.file_name + (r.page ? ` (page ${r.page})` : ""));
   if (r.predicted_concentration_mg_L == null) lines.push(whyEmpty(r, "value"));
   if (r.error) lines.push("Error: " + r.error);
   if (r.warning) lines.push("Notes: " + r.warning);
@@ -40,13 +39,26 @@ export function rowTooltip(r) {
   return lines.join(String.fromCharCode(10));
 }
 
+// The Image column: the file's name (cut off with an ellipsis, the full name in the tooltip) and the "Open" link.
+// No link without an image URL; "—" without a file name.
+function ImageCell({ r }) {
+  const name = r.file_name ? r.file_name + (r.page ? ` (page ${r.page})` : "") : "";
+  if (!name) return "—";
+  return (
+    <span className="image-cell">
+      <span className="image-name mono" title={name}>{name}</span>
+      {r.image_url && <a href={r.image_url} target="_blank" rel="noreferrer">Open</a>}
+    </span>
+  );
+}
+
 // Five columns. The styles key on the class, not on the column's position. Only the concentration has a tooltip.
 const COLUMNS = [
   { cls: "c-rgb num", label: "R", cell: (r) => fmt(r.R) },
   { cls: "c-rgb num", label: "G", cell: (r) => fmt(r.G) },
   { cls: "c-rgb num", label: "B", cell: (r) => fmt(r.B) },
-  { cls: "c-conc num", label: "Concentration (mg/L)", title: rowTooltip, cell: (r) => num(r.predicted_concentration_mg_L) },
-  { cls: "c-image", label: "Image", cell: (r) => (r.image_url ? <a href={r.image_url} target="_blank" rel="noreferrer">Open</a> : "—") },
+  { cls: "c-conc num", label: "COD (mg/L)", title: rowTooltip, cell: (r) => num(r.predicted_concentration_mg_L) },
+  { cls: "c-image", label: "Image", cell: (r) => <ImageCell r={r} /> },
 ];
 
 export default function ResultsCard({ jobId, job, results, files = [] }) {

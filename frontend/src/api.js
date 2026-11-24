@@ -103,6 +103,3 @@ export const createJob = (items, signal, idempotencyKey) =>
 export const getJob = (id, signal) => request(`/api/jobs/${id}`, { signal, timeoutMs: POLL_TIMEOUT_MS });
 export const getResults = (id, signal) => request(`/api/jobs/${id}/results`, { signal, timeoutMs: POLL_TIMEOUT_MS });
 export const downloadUrl = (id, format) => `${BASE}/api/jobs/${id}/download?format=${format}`;
-
-// The active concentration model: { model_type, model_name, features, expected_error_mg_L, trainable }
-export const getModelInfo = (signal) => request("/api/model-info", { signal, timeoutMs: POLL_TIMEOUT_MS });
