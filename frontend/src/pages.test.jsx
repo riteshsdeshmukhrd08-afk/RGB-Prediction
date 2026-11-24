@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup as html } from "react-dom/server";
-import ResultsCard, { rowTooltip } from "./components/ResultsCard.jsx";
+import ResultsCard, { rowTooltip, statusPill } from "./components/ResultsCard.jsx";
 import TopBar from "./components/TopBar.jsx";
 import Banner from "./components/Banner.jsx";
 import ModelCards from "./components/ModelCards.jsx";
@@ -114,55 +114,61 @@ describe("Compare card", () => {
 });
 
 describe("Results table", () => {
-  it("has exactly two columns: Concentration (mg/L) and Status", () => {
+  it("has exactly five columns: R, G, B, Concentration (mg/L), Image", () => {
     const m = html(<ResultsCard jobId="j" job={job} results={results} />);
     const heads = [...m.matchAll(/<th class="[^"]*">([^<]*)<\/th>/g)].map((x) => x[1]);
-    expect(heads).toEqual(["Concentration (mg/L)", "Status"]);
-    expect(m.match(/<tbody>.*?<\/tr>/s)[0].match(/<td class="/g)).toHaveLength(2);       // one cell per heading
-    for (const gone of ["Page", "Colour", "± error", "swatch", ">R<", ">G<", ">B<", "(ppm)", "COD"]) expect(m).not.toContain(gone);
+    expect(heads).toEqual(["R", "G", "B", "Concentration (mg/L)", "Image"]);
+    expect(m.match(/<tbody>.*?<\/tr>/s)[0].match(/<td class="/g)).toHaveLength(5);       // one cell per heading
+    expect([...m.matchAll(/<th class="([^"]+)"/g)].map((x) => x[1])).toEqual(["c-rgb num", "c-rgb num", "c-rgb num", "c-conc num", "c-image"]);
+    for (const gone of ["Page", "Colour", "± error", "Status", "swatch", "(ppm)", "COD"]) expect(m).not.toContain(gone);
   });
-  it("shows the value with one decimal place and the ± error in its tooltip", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], predicted_concentration_mg_L: 387.55, expected_error_mg_L: 33.93783767886789 }]} />);
-    expect(m).toMatch(/<td class="c-conc num" title="a\.jpg\n± 33\.9 mg\/L"[^>]*>387\.[56]<\/td>/);
-    expect(html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], predicted_concentration_mg_L: 200 }]} />)).toContain(">200.0</td>");
-    expect(rowTooltip(results[0])).toBe("a.jpg\n± 12.5 mg/L");
+  it("shows R, G, B with two decimals and the concentration with one", () => {
+    const m = html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], predicted_concentration_mg_L: 200 }]} />);
+    expect(m).toMatch(/<td class="c-rgb num">220\.02<\/td><td class="c-rgb num">140\.00<\/td><td class="c-rgb num">40\.00<\/td><td class="c-conc num"[^>]*>200\.0<\/td>/);
+    expect(html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], predicted_concentration_mg_L: 387.55 }]} />)).toMatch(/>387\.[56]<\/td>/);
   });
-  it("shows a dash and the reason in the tooltip for a failed row", () => {
+  it("shows a dash when there is no value, R, G or B", () => {
     const m = html(<ResultsCard jobId="j" job={job} results={[results[1]]} />);
-    expect(m).toContain("The photo could not be measured, so there is no value");
-    expect(m).toContain("Error: no tube");
-    expect(m).toMatch(/<td class="c-conc num" title="[^"]*">—<\/td>/);
-    expect(rowTooltip(results[1])).toContain("± —");                                    // no error value: a dash
-    const none = html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], predicted_concentration_mg_L: null, expected_error_mg_L: null, model_status: null }]} />);
-    expect(none).toContain("No model loaded: nothing to predict with (train the linear model first)");
+    expect(m.match(/<tbody>.*<\/tbody>/s)[0].match(/>—</g)).toHaveLength(5);              // R, G, B, concentration, image
   });
-  it("shows a Not valid row without a value and without an error estimate", () => {
-    const bad = { ...results[0], predicted_concentration_mg_L: null, expected_error_mg_L: 33.94, model_status: "NOT_VALID_OUTSIDE_CALIBRATED_RANGE",
-      model_status_text: "Not valid: outside calibrated range", warning: "Predicted value is outside the calibrated range" };
-    const m = html(<ResultsCard jobId="j" job={job} results={[bad]} />);
-    expect(m).toContain("Not valid: the predicted value is outside the calibrated range, so no value is given");
-    expect(rowTooltip(bad)).toContain("± —");
-    expect(m).toContain('<span class="pill bad">Not valid: outside calibrated range</span>');
+  it("shows Open as a link to the image in a new tab, and a dash without an image URL", () => {
+    const withImage = html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], image_url: "https://x.example/a.jpg" }]} />);
+    expect(withImage).toContain('<td class="c-image"><a href="https://x.example/a.jpg" target="_blank" rel="noreferrer">Open</a></td>');
+    expect(html(<ResultsCard jobId="j" job={job} results={[results[0]]} />)).toContain('<td class="c-image">—</td>');
   });
-  it("colours the status pills: OK green, Review amber, Not valid red, Failed red", () => {
-    const row = (extra) => html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], ...extra }]} />);
-    expect(row({})).toContain('<span class="pill ok">OK</span>');
-    expect(row({ model_status: "REVIEW" })).toContain('<span class="pill warn">Review</span>');
-    expect(row({ model_status: "NOT_VALID_OUTSIDE_CALIBRATED_RANGE" })).toContain('<span class="pill bad">Not valid: outside calibrated range</span>');
-    expect(html(<ResultsCard jobId="j" job={job} results={[results[1]]} />)).toContain('<span class="pill bad">Failed</span>');
+  it("shows the status and the ± error in the concentration tooltip", () => {
+    const review = { ...results[0], predicted_concentration_mg_L: 387.6, expected_error_mg_L: 33.93783767886789, model_status: "REVIEW" };
+    expect(rowTooltip(review).split(String.fromCharCode(10))[0]).toBe("Review · ± 33.9 mg/L");
+    expect(html(<ResultsCard jobId="j" job={job} results={[review]} />)).toMatch(/<td class="c-conc num" title="Review · ± 33\.9 mg\/L[^"]*"[^>]*>387\.6<\/td>/);
+    expect(rowTooltip(results[0]).split(String.fromCharCode(10))[0]).toBe("OK · ± 12.5 mg/L");
   });
-  it("puts the notes and flags in the tooltip", () => {
+  it("shows the failure reason in the tooltip of a failed row, with a dash for the error", () => {
+    const t = rowTooltip(results[1]);
+    expect(t.split(String.fromCharCode(10))[0]).toBe("Failed · ± —");
+    expect(t).toContain("Error: no tube");
+    expect(t).toContain("The photo could not be measured, so there is no value");
+  });
+  it("shows a dash for the error when none is given, and for a Not valid row", () => {
+    const none = { ...results[0], predicted_concentration_mg_L: null, expected_error_mg_L: null, model_status: null };
+    expect(rowTooltip(none)).toContain("OK · ± —");
+    expect(rowTooltip(none)).toContain("No model loaded: nothing to predict with (train the linear model first)");
+    const bad = { ...results[0], predicted_concentration_mg_L: null, expected_error_mg_L: 33.94, model_status: "NOT_VALID_OUTSIDE_CALIBRATED_RANGE" };
+    expect(rowTooltip(bad).split(String.fromCharCode(10))[0]).toBe("Not valid: outside calibrated range · ± —");
+    expect(rowTooltip(bad)).toContain("Not valid: the predicted value is outside the calibrated range, so no value is given");
+  });
+  it("derives the status label: OK green, Review amber, Not valid red, Failed red, Low pixels amber", () => {
+    expect(statusPill(results[0])).toEqual(["ok", "OK"]);
+    expect(statusPill({ ...results[0], model_status: "REVIEW" })).toEqual(["warn", "Review"]);
+    expect(statusPill({ ...results[0], model_status: "NOT_VALID_OUTSIDE_CALIBRATED_RANGE" })).toEqual(["bad", "Not valid: outside calibrated range"]);
+    expect(statusPill(results[1])).toEqual(["bad", "Failed"]);
+    expect(statusPill({ ...results[0], status: "low_pixels" })).toEqual(["warn", "Low pixels"]);
+  });
+  it("puts the notes and flags in the tooltip, and counts flagged rows in the summary line", () => {
     const long = "Outside the calibrated region. Confirm with a standard.";
     const r = { ...results[0], model_status: "REVIEW", warning: long, flags: "clipped;high_std" };
-    expect(rowTooltip(r)).toBe("a.jpg\n± 12.5 mg/L\nNotes: " + long + "\nFlags: clipped, high_std");
-    expect(html(<ResultsCard jobId="j" job={job} results={[r]} />)).toContain("Notes: Outside the calibrated region. Confirm with a standard.");
-  });
-  it("shows the status pills, and counts flagged rows in the summary line", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={[{ ...results[0], status: "low_pixels", flags: "low_pixels;clipped" }, results[1]]} />);
-    expect(m).toContain('<span class="pill warn">Low pixels</span>');
-    expect(m).toContain('<span class="pill bad">Failed</span>');
+    expect(rowTooltip(r)).toBe(["Review · ± 12.5 mg/L", "a.jpg", "Notes: " + long, "Flags: clipped, high_std"].join(String.fromCharCode(10)));
+    const m = html(<ResultsCard jobId="j" job={job} results={[r, results[1]]} />);
     expect(m).toContain('<span class="figure"><b class="mono">1</b><span>flagged</span></span>');
-    expect(html(<ResultsCard jobId="j" job={job} results={results} />)).toContain('<span class="pill ok">OK</span>');
   });
   it("shows the status pill and the three figures in one summary row, with their labels apart", () => {
     const m = html(<ResultsCard jobId="j" job={job} results={results} />);
@@ -195,10 +201,6 @@ describe("Results table", () => {
     const m = html(<ResultsCard jobId={null} job={null} results={[]} />);
     expect(m).toContain('class="empty"');
     expect(m).toContain("Results appear here after you press Run.");
-  });
-  it("gives every column a class, so the styles do not depend on the column position", () => {
-    const m = html(<ResultsCard jobId="j" job={job} results={results} />);
-    expect([...m.matchAll(/<th class="([^"]+)"/g)].map((x) => x[1])).toEqual(["c-conc num", "c-status"]);
   });
   it("puts the download buttons after the table, at the bottom of the panel", () => {
     const m = html(<ResultsCard jobId="j" job={job} results={results} />);
