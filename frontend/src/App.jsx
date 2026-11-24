@@ -9,7 +9,6 @@ import Banner from "./components/Banner.jsx";
 import TopBar from "./components/TopBar.jsx";
 import InputCard from "./components/InputCard.jsx";
 import ResultsCard from "./components/ResultsCard.jsx";
-import ModelCards from "./components/ModelCards.jsx";
 
 export default function App() {
   const [health, setHealth] = useState(null);
@@ -46,7 +45,6 @@ export default function App() {
   }, []);
 
   // The active model ({ model_type, model_name, features, expected_error_mg_L, trainable }), used for the header label.
-  // The Train card is only shown for the linear model. Also called after a training.
   const refreshModel = useCallback(async () => {
     modelCtl.current?.abort();
     const ctl = new AbortController();
@@ -144,7 +142,6 @@ export default function App() {
         <ResultsCard jobId={jobId} job={shownJob} results={results} files={files} />
         </main>
       </div>
-      <ModelCards model={model} onTrained={refreshModel} />
     </div>
   );
 }

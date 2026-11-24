@@ -3,8 +3,7 @@ import { renderToStaticMarkup as html } from "react-dom/server";
 import ResultsCard, { rowTooltip, statusPill } from "./components/ResultsCard.jsx";
 import TopBar from "./components/TopBar.jsx";
 import Banner from "./components/Banner.jsx";
-import ModelCards from "./components/ModelCards.jsx";
-import { CompareResult, COMPARE_NOTE } from "./components/CompareCard.jsx";
+import App from "./App.jsx";
 import { MODEL_DISPLAY_NAME, modelLabel } from "./modelInfo.js";
 import { csvFromResults } from "./csvExport.js";
 
@@ -55,64 +54,20 @@ describe("Top bar", () => {
   });
 });
 
-describe("Model cards", () => {
-  it("shows the Train card only for the linear model", () => {
-    const linear = html(<ModelCards model={LINEAR} onTrained={() => {}} />);
-    expect(linear).toContain("Train the concentration model");
-    expect(linear).not.toContain("fixed and cannot be trained");
-    expect(html(<ModelCards model={UNTRAINED} onTrained={() => {}} />)).toContain("Train the concentration model");
-  });
-  it("shows a short notice instead when the model is the ANN", () => {
-    const m = html(<ModelCards model={ANN} onTrained={() => {}} />);
-    expect(m).not.toContain("Train the concentration model");
-    expect(m).toContain("ANN v1.1");
-    expect(m).toContain("fixed and cannot be trained here");
-    expect(m).toContain("MODEL_TYPE=linear");
-  });
-  it("shows neither before the model is known, and always the Compare card with its note", () => {
-    for (const model of [null, ANN, LINEAR]) {
-      const m = html(<ModelCards model={model} onTrained={() => {}} />);
-      expect(m).toContain("Compare the models");
-      expect(m).toContain(COMPARE_NOTE.replace(/'/g, "&#x27;"));
-      expect(m).toContain(">Compare<");
+describe("The page", () => {
+  it("has the top bar, the input panel and the results panel, and no Concentration model or Compare section", () => {
+    const m = html(<App />);
+    expect(m).toContain("RGB measurement");                       // top bar
+    expect(m).toContain('class="card input-card"');               // input panel
+    expect(m).toContain('class="card results-card"');             // results panel
+    for (const gone of ["Concentration model", "Compare the models", "Compare", "Train the concentration model", "train-card", "compare-card", "ann-notice"]) {
+      expect(m).not.toContain(gone);
     }
-    const none = html(<ModelCards model={null} onTrained={() => {}} />);
-    expect(none).not.toContain("Train the concentration model");
-    expect(none).not.toContain("fixed and cannot be trained");
+    expect(m.match(/<section/g)).toHaveLength(2);                 // only the two panels
   });
-});
-
-describe("Compare card", () => {
-  const result = {
-    n_rows: 3, rejected_rows: [], warnings: ["Using trim_R as R"],
-    models: {
-      ann: { model_name: "ANN v1.1", available: true, features: ["R", "G"], n_rows: 3, n_valid: 2, mae: 15, rmse: 15.8114, n_unpredicted: 1, n_review: 1 },
-      linear: { model_version: null, features: [], available: false, n_rows: 3, n_valid: 0, mae: null, rmse: null, n_unpredicted: 3 },
-    },
-    rows: [
-      { row: 2, known_concentration: 100, ann_predicted: 110, ann_status: "OK", ann_note: "", ann_abs_error: 10, linear_predicted: null, linear_note: "", linear_abs_error: null },
-      { row: 3, known_concentration: 200, ann_predicted: 220, ann_status: "REVIEW", ann_note: "", ann_abs_error: 20, linear_predicted: null, linear_note: "", linear_abs_error: null },
-      { row: 4, known_concentration: 300, ann_predicted: null, ann_status: "NOT_VALID_OUTSIDE_CALIBRATED_RANGE", ann_note: "Predicted value is outside the calibrated range 0-1255 mg/L", ann_abs_error: null, linear_predicted: null, linear_note: "", linear_abs_error: null },
-    ],
-  };
-  it("shows the summary numbers of both models", () => {
-    const m = html(<CompareResult result={result} />);
-    expect(m).toContain("ANN (ANN v1.1)");
-    expect(m).toMatch(/Valid rows<\/span><span class="value mono">2</);
-    expect(m).toMatch(/MAE \(mg\/L\)<\/span><span class="value mono">15\.0</);
-    expect(m).toMatch(/RMSE \(mg\/L\)<\/span><span class="value mono">15\.8</);
-    expect(m).toMatch(/Not predicted<\/span><span class="value mono">1</);
-    expect(m).toContain("No linear model is trained, so it could not predict any row.");
-    expect(m).toMatch(/MAE \(mg\/L\)<\/span><span class="value mono">—</);                  // a model that predicted nothing: a dash, not 0
-  });
-  it("shows the comparison table with the known value, both predictions and both errors", () => {
-    const m = html(<CompareResult result={result} />);
-    const heads = [...m.matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((x) => x[1]);
-    expect(heads).toEqual(["Row", "Known (mg/L)", "ANN", "ANN abs. error", "Linear", "Linear abs. error"]);
-    expect(m.match(/<tbody>.*<\/tbody>/s)[0].match(/<tr>/g)).toHaveLength(3);
-    expect(m).toMatch(/<td class="num mono">100\.0<\/td><td class="num mono"[^>]*>110\.0<\/td><td class="num mono">10\.00<\/td><td class="num mono">—<\/td>/);
-    expect(m).toContain('title="Predicted value is outside the calibrated range 0-1255 mg/L"');   // why the ANN value is empty
-    expect(m).toContain('1 row(s) are "Review"'.replace(/"/g, "&quot;"));
+  it("still renders the top bar with the model name, and the table", () => {
+    expect(html(<TopBar dbDown={false} backendError={null} model={ANN} />)).toContain("Model: RGB prediction model");
+    expect(html(<ResultsCard jobId="j" job={job} results={results} />)).toContain('class="results-table"');
   });
 });
 
@@ -148,8 +103,7 @@ describe("Results table", () => {
   it("shows the expected error of a single result nowhere on screen", () => {
     const row = { ...results[0], predicted_concentration_mg_L: 387.6, expected_error_mg_L: 33.93783767886789, model_status: "REVIEW", warning: "w", flags: "clipped", image_url: "https://x.example/a.jpg" };
     const screens = [html(<TopBar dbDown={false} backendError={null} model={ANN} />),
-      html(<ResultsCard jobId="j" job={job} results={[row, results[1]]} />),
-      html(<ModelCards model={ANN} onTrained={() => {}} />)];
+      html(<ResultsCard jobId="j" job={job} results={[row, results[1]]} />)];
     for (const m of screens) expect(m).not.toMatch(/±|33\.9|33\.94|12\.5/);
     expect(rowTooltip(row)).not.toMatch(/±|33\.9|mg\/L/);
   });
