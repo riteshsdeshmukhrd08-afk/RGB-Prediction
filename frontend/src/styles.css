@@ -158,7 +158,7 @@ a.button { color: var(--text); }
 .figure { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; font-size: 14px; color: var(--muted); }
 .figure b { font-size: 16px; font-weight: 700; color: var(--text); }
 /* the table area is as tall as its rows, and scrolls (both ways) inside itself when it needs more room */
-.results-card .table-wrap { flex: 0 1 auto; min-height: 0; max-height: none; margin: 0; overflow: auto; overscroll-behavior: contain;
+.results-card .table-wrap { flex: 0 1 auto; min-height: 0; max-height: none; margin: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
   scrollbar-width: thin; scrollbar-color: #3a4756 transparent; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
 .results-card .table-wrap { min-height: 120px; }
 .per-file { flex: none; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 13px; }
@@ -185,33 +185,16 @@ tr.row-failed td { color: #f0a3a3; }
 table.small { width: auto; min-width: 280px; margin: 0 0 8px; border: 1px solid var(--border); border-radius: 8px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
 table.small td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 tr.chosen td { color: var(--accent); font-weight: 600; background: rgba(45, 212, 191, .08); }
-.swatch { display: inline-block; width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .22); vertical-align: middle; }
 
-/* The results table: automatic layout, so a column is never narrower than its content. Every column has a
-   minimum width and keeps its text on one line (Notes and Flags wrap between words / tags only). The styles use
-   the column classes set in ResultsCard, not the column's position. */
-/* min-width = the sum of the column minimums below, so the table scrolls instead of squeezing a column */
-.results-table { width: 100%; min-width: 1746px; border-collapse: separate; border-spacing: 0; }
+/* The results table: two columns (concentration, status). It fits the panel, so it needs no horizontal scroll. */
+.results-table { width: 100%; border-collapse: separate; border-spacing: 0; }
 .results-table th, .results-table td { padding: 12px 14px; vertical-align: middle; white-space: nowrap; }
 .results-table th { background: var(--panel-2); color: var(--head-text); }
 .results-table tbody tr:last-child td { border-bottom: 0; }
 .results-table .num { text-align: right; }
 .results-table td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.c-index { width: 1%; min-width: 48px; }
-.c-file { min-width: 220px; }
-.c-file .ellipsis { display: block; max-width: 320px; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
-.c-page { width: 1%; min-width: 64px; }
-.c-rgb { width: 1%; min-width: 88px; }
-.c-colour { width: 1%; min-width: 80px; }
-.c-conc { width: 1%; min-width: 190px; }
-.c-err { width: 1%; min-width: 140px; }
-.c-status { width: 1%; min-width: 280px; }
-.results-table td.c-flags { width: 1%; min-width: 160px; white-space: normal; }
-.results-table td.c-notes { min-width: 220px; white-space: normal; overflow-wrap: break-word; color: var(--muted); font-size: 13px; }
-.results-table th.c-notes { min-width: 220px; }
-.results-table th.c-flags { min-width: 160px; }
-.c-image { width: 1%; min-width: 80px; }
-.c-image a { white-space: nowrap; }
+.c-conc { width: 50%; }
+.c-status { width: 50%; }
 
 /* ===== Train panel ===== */
 .train-card { width: 100%; min-height: 260px; display: flex; flex-direction: column; }
