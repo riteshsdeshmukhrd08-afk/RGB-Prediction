@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 import concentration
-import concentration_ann
+import ann_v1_1
 
 NEEDED = ("concentration_ppm", "R", "G")             # B is optional: only a linear model that uses B needs it
 
@@ -47,6 +47,10 @@ def compare_table(df):
     if not ok.any():
         return None, ["No valid rows: every row has a missing or non-numeric concentration_ppm, R or G."]
 
+    try:
+        bundle = ann_v1_1.get()
+    except ann_v1_1.ModelUnavailable as e:
+        bundle, ann_problem = None, str(e)
     linear, linear_version = concentration.current()
     rows, ann_err, lin_err = [], [], []
     for idx in df.index[ok]:
@@ -58,7 +62,9 @@ def compare_table(df):
             row["file_name"] = str(columns["file_name"][idx])
 
         try:                                                         # the ANN uses R and G only
-            res = concentration_ann.predict(r, g)
+            if bundle is None:
+                raise ValueError(f"The ANN model is not available: {ann_problem}")
+            res = ann_v1_1.predict(r, g, bundle)
             ann_pred, ann_status, ann_note = res["predicted_concentration_mg_L"], res["status"], "; ".join(res["warnings"])
         except ValueError as e:
             ann_pred, ann_status, ann_note = None, None, str(e)
@@ -75,15 +81,17 @@ def compare_table(df):
         rows.append(row)
 
     n = len(rows)
-    ann = {"model_version": concentration_ann.MODEL_VERSION, "features": list(concentration_ann.FEATURES),
+    ann = {"model_name": ann_v1_1.MODEL_NAME, "features": list(ann_v1_1.FEATURES), "available": bundle is not None,
            **_summary(ann_err, n)}
-    ann["n_review"] = sum(1 for r in rows if r["ann_status"] == concentration_ann.STATUS_REVIEW)
+    ann["n_review"] = sum(1 for r in rows if r["ann_status"] == ann_v1_1.STATUS_REVIEW)
     lin = {"model_version": linear_version, "features": list(linear["features"]) if linear else [],
            "available": linear is not None, **_summary(lin_err, n)}
     warnings = list(mappings)
     if rejected:
         warnings.append(f"Ignored row(s) {concentration._rows_text(rejected)}: a value is missing, not a number, "
                         "or the concentration is negative (row 1 is the header).")
+    if bundle is None:
+        warnings.append(f"The ANN model is not available, so it could not predict any row: {ann_problem}")
     if linear is None:
         warnings.append("No linear model is trained, so it could not predict any row.")
     return {"n_rows": n, "rejected_rows": rejected, "warnings": warnings,

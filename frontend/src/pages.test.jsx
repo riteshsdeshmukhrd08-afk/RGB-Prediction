@@ -13,7 +13,7 @@ const results = [
   { file_name: "b.pdf", page: 2, status: "failed", error: "no tube", R: null, G: null, B: null, predicted_concentration_mg_L: null, expected_error_mg_L: null, model_status: null, model_status_text: "", flags: "failed", warning: "", image_url: null },
 ];
 
-const ANN = { model_type: "ann", model_version: "ann_v2_clean", features: ["R", "G"], expected_error_mg_L: 17.78, trainable: false };
+const ANN = { model_type: "ann", model_name: "ANN v1.1", features: ["R", "G"], expected_error_mg_L: 33.93783767886789, trainable: false };
 const LINEAR = { model_type: "linear", model_version: "abc123def456", features: ["R", "G"], expected_error_mg_L: 12.5, trainable: true };
 const UNTRAINED = { model_type: "linear", model_version: null, features: [], expected_error_mg_L: null, trainable: true };
 
@@ -21,7 +21,7 @@ describe("Top bar", () => {
   it("shows the active ANN model with its expected error", () => {
     const m = html(<TopBar dbDown={false} backendError={null} model={ANN} />);
     expect(m).toContain("RGB measurement");
-    expect(m).toContain("Model: ANN v2 clean · ±17.8 mg/L");
+    expect(m).toContain("Model: ANN v1.1 · ±33.9 mg/L");
   });
   it("shows the linear model's details, or that it is not trained yet", () => {
     expect(html(<TopBar dbDown={false} backendError={null} model={LINEAR} />)).toContain("Model: linear (R, G) · ±12.5 mg/L");
@@ -49,7 +49,7 @@ describe("Model cards", () => {
   it("shows a short notice instead when the model is the ANN", () => {
     const m = html(<ModelCards model={ANN} onTrained={() => {}} />);
     expect(m).not.toContain("Train the concentration model");
-    expect(m).toContain("ann_v2_clean");
+    expect(m).toContain("ANN v1.1");
     expect(m).toContain("fixed and cannot be trained here");
     expect(m).toContain("MODEL_TYPE=linear");
   });
@@ -70,7 +70,7 @@ describe("Compare card", () => {
   const result = {
     n_rows: 3, rejected_rows: [], warnings: ["Using trim_R as R"],
     models: {
-      ann: { model_version: "ann_v2_clean", features: ["R", "G"], n_rows: 3, n_valid: 2, mae: 15, rmse: 15.8114, n_unpredicted: 1, n_review: 1 },
+      ann: { model_name: "ANN v1.1", available: true, features: ["R", "G"], n_rows: 3, n_valid: 2, mae: 15, rmse: 15.8114, n_unpredicted: 1, n_review: 1 },
       linear: { model_version: null, features: [], available: false, n_rows: 3, n_valid: 0, mae: null, rmse: null, n_unpredicted: 3 },
     },
     rows: [
@@ -81,7 +81,7 @@ describe("Compare card", () => {
   };
   it("shows the summary numbers of both models", () => {
     const m = html(<CompareResult result={result} />);
-    expect(m).toContain("ANN (ann_v2_clean)");
+    expect(m).toContain("ANN (ANN v1.1)");
     expect(m).toMatch(/Valid rows<\/span><span class="value mono">2</);
     expect(m).toMatch(/MAE \(mg\/L\)<\/span><span class="value mono">15\.0</);
     expect(m).toMatch(/RMSE \(mg\/L\)<\/span><span class="value mono">15\.8</);
@@ -120,7 +120,7 @@ describe("Results table", () => {
     expect(none).toMatch(/>220\.02<\/td><td class="c-rgb num">140\.00<\/td><td class="c-rgb num">40\.00</);   // R, G, B are always shown
   });
   it("shows a Not valid row without a value and without an error estimate", () => {
-    const bad = { ...results[0], predicted_concentration_mg_L: null, expected_error_mg_L: 17.78, model_status: "NOT_VALID_OUTSIDE_CALIBRATED_RANGE",
+    const bad = { ...results[0], predicted_concentration_mg_L: null, expected_error_mg_L: 33.94, model_status: "NOT_VALID_OUTSIDE_CALIBRATED_RANGE",
       model_status_text: "Not valid: outside calibrated range", warning: "Predicted value is outside the calibrated range 0-1255 mg/L; treat as not validated" };
     const m = html(<ResultsCard jobId="j" job={job} results={[bad]} />);
     expect(m).toContain('<td class="c-conc num" title="Not valid: the predicted value is outside the calibrated range, so no value is given">—</td>');
@@ -211,10 +211,10 @@ describe("Results table", () => {
 
 describe("Combined CSV", () => {
   it("has the new columns and shows the model status as text, like the server export", () => {
-    const bad = { ...results[0], file_name: "n.jpg", predicted_concentration_mg_L: null, expected_error_mg_L: 17.78, model_status: "NOT_VALID_OUTSIDE_CALIBRATED_RANGE", model_status_text: "Not valid: outside calibrated range" };
+    const bad = { ...results[0], file_name: "n.jpg", predicted_concentration_mg_L: null, expected_error_mg_L: 33.94, model_status: "NOT_VALID_OUTSIDE_CALIBRATED_RANGE", model_status_text: "Not valid: outside calibrated range" };
     const lines = csvFromResults([results[0], bad]).trim().split(String.fromCharCode(10));
     expect(lines[0]).toBe("file_name,page,status,R,G,B,predicted_concentration_mg_L,expected_error_mg_L,model_status,flags,warning,error,image_url");
     expect(lines[1]).toBe("a.jpg,,ok,220.02,140,40,199.6,12.5,OK,,,,");
-    expect(lines[2]).toBe("n.jpg,,ok,220.02,140,40,,17.78,Not valid: outside calibrated range,,,,");
+    expect(lines[2]).toBe("n.jpg,,ok,220.02,140,40,,33.94,Not valid: outside calibrated range,,,,");
   });
 });

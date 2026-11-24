@@ -9,7 +9,7 @@ function Chip({ tone, children }) {
   );
 }
 
-// The header shows the title, the active model ("Model: ANN v2 clean · ±17.8 mg/L") and, when something is wrong
+// The header shows the title, the active model ("Model: ANN v1.1 · ±33.9 mg/L", read from the backend) and, when something is wrong
 // with the backend or database, a red chip.
 export default function TopBar({ dbDown, backendError, model }) {
   return (

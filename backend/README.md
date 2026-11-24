@@ -2,7 +2,7 @@
 
 Upload photos or PDFs of vials. For each photo the server measures R, G and B (with `RGB_PREDICTION.py`) and a
 predicted concentration in mg/L. Results go to MongoDB, pictures to Cloudinary, and you can download CSV / XLSX.
-`MODEL_TYPE` chooses the model: `ann` (the default, a fixed neural network, `concentration_ann.py`) or `linear` (trained
+`MODEL_TYPE` chooses the model: `ann` (the default, ANN v1.1, a fixed neural network from `models/ann_v1_1.joblib`, `ann_v1_1.py`) or `linear` (trained
 in the app from a CSV or XLSX of known values). `POST /api/compare` compares the two on known concentrations.
 
 ## Run it (Windows PowerShell)
@@ -21,7 +21,7 @@ Docs and a try-it page: <http://localhost:8000/docs>. Check the database first w
 ## Settings (`.env`)
 
 `MONGODB_URI`, `MONGODB_DB`, `CLOUDINARY_URL` (or `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` /
-`CLOUDINARY_API_SECRET`), `MODEL_DIR` (default `./model`), `FRONTEND_ORIGIN` (comma-separated), `MAX_FILE_MB` (20),
+`CLOUDINARY_API_SECRET`), `MODEL_DIR` (default `./model`), `MODEL_BUNDLE_PATH` (default `models/ann_v1_1.joblib`), `FRONTEND_ORIGIN` (comma-separated), `MAX_FILE_MB` (20),
 `MAX_FILES` (200), `WORKERS` (2), `MODEL_TYPE` (`ann` or `linear`, default `ann`; anything else stops the server at
 start). Keys live only in `.env`, which is git-ignored. Leave Cloudinary empty to skip
 image storage.
@@ -30,10 +30,10 @@ image storage.
 
 | Method and path | Result |
 |---|---|
-| `GET /api/health` | `{status, mongo, cloudinary, model_type, model}`; `model` is `loaded` or `missing` (always `loaded` for the ANN); always 200 |
-| `GET /api/model` | the active model: `{model_type, model_version, features, expected_error_mg_L, trainable}` |
+| `GET /api/health` | `{status, mongo, cloudinary, model_type, model}`; always 200. `model` is `loaded`; for the ANN also `unavailable` with `model_error` (the reason); for the linear model `missing` |
+| `GET /api/model-info` | the active model: `{model_type, model_name, features, expected_error_mg_L, nominal_range_mg_L, training_max_mg_L, trainable}` (ANN: `"ANN v1.1"`, 503 if its file is not loaded) |
 | `GET /api/formats` | the image extensions this server can open (from Pillow, after HEIC/AVIF plugins load) |
-| `POST /api/jobs` | multipart, repeated field `files` → 202 `{job_id, status, accepted, skipped}` |
+| `POST /api/jobs` | multipart, repeated field `files` → 202 `{job_id, status, accepted, skipped}`; 503 when `MODEL_TYPE=ann` and the ANN file is not loaded |
 | `GET /api/jobs?limit=50` | jobs, newest first |
 | `GET /api/jobs/{id}` | `{job_id, status, total, processed, error, skipped}` |
 | `GET /api/jobs/{id}/results` | `{job_id, status, results:[{file_name, page, status, error, R, G, B, predicted_concentration_mg_L, expected_error_mg_L, model_status, model_status_text, flags, warning, image_url}]}` |
@@ -53,7 +53,7 @@ never changed by the model.
 the same `R` and `G` the row shows (the linear model's ppm value is reported in the same field, 1 ppm = 1 mg/L).
 `model_status` is `OK`, `REVIEW` or `NOT_VALID_OUTSIDE_CALIBRATED_RANGE` for the ANN (`model_status_text`: "OK", "Review",
 "Not valid: outside calibrated range"); for the linear model it is `OK`, or `REVIEW` when a value is outside its training
-range, or empty when no model is trained. For `NOT_VALID_OUTSIDE_CALIBRATED_RANGE` the value is empty. The ANN's
+range, or empty when no model is trained. For `NOT_VALID_OUTSIDE_CALIBRATED_RANGE` (predicted value below 100 or above 1250 mg/L) the value is empty. The ANN gives `REVIEW` for a value above the highest concentration in the training data (read from the model file: 1232 mg/L) and for R, G outside the calibrated region (the model file's min/max box or its distance limit). These status rules were written from the specification; they were not checked against the original colab cell, which was not available. The ANN's
 warnings, and the linear model's `outside training range: R`, are in `warning` (the Notes column). The ANN uses only
 `R` and `G`; a value outside 0-255 fails that row with the message `R=300.0 must be in 0-255` and the job goes on.
 `status` is `ok`, `low_pixels` or `failed`; `flags` can hold `low_pixels`, `clipped`, `high_std`, `roi_size` or `failed`.
@@ -116,7 +116,8 @@ main.py (routes, background job)
   ├ pdf_utils.py       count PDF pages, render one page
   ├ imaging.py         open any format, clean PNG for non-JPEG files
   ├ concentration.py   (linear model) read + check the training table, fit, save/load the model, predict
-  ├ concentration_ann.py  the fixed ANN (numpy only, weights inside), predict(R, G)
+  ├ ann_v1_1.py        the fixed ANN: loads models/ann_v1_1.joblib once (SHA-256 checked), predict(R, G, bundle)
+  ├ models/            ann_v1_1.joblib and ann_v1_1.sha256 (the only model file the app ever loads)
   ├ compare.py         POST /api/compare: both models against known concentrations
   ├ training.py        one training at a time, in a background thread
   ├ measure_service.py analyze_image(path, model, model_type) -> R, G, B, concentration, flags
@@ -126,3 +127,11 @@ main.py (routes, background job)
 
 `RGB_PREDICTION.py` can still be run by hand to build an RGB table from a folder of photos (`python RGB_PREDICTION.py
 "C:\photos" "C:\rgb_out"`); the server does not use that mode.
+
+## The ANN model file
+
+`models/ann_v1_1.joblib` is loaded once at startup, only if its SHA-256 equals `MODEL_BUNDLE_SHA256` in `config.py`
+(the same value is in `models/ann_v1_1.sha256`). A joblib file is pickled code, so the app never loads any other file:
+not an upload and not a path a request can set. If the file is missing, changed, or was built with another scikit-learn
+version than the pinned one (`scikit-learn==1.9.1`), `/api/health` reports `model: unavailable` with the reason and
+`POST /api/jobs` answers 503. The model is never trained or refitted here.

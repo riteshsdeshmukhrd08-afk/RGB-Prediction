@@ -44,7 +44,12 @@ MAX_PDF_PAGES = _int_env("MAX_PDF_PAGES", 50)
 # Folder that holds concentration_model.json (a relative path is relative to the backend folder)
 MODEL_DIR = (BASE_DIR / os.getenv("MODEL_DIR", "model")).resolve()
 
-# Which concentration model gives the predictions: "ann" (default; the fixed ANN, no model file, cannot be trained)
+# The ANN: ONE model file in the repository, loaded once at startup after its SHA-256 matches the pinned value.
+# MODEL_BUNDLE_PATH is read from .env at deploy time (a relative path is relative to the backend folder); no request can set it.
+MODEL_BUNDLE_PATH = (BASE_DIR / os.getenv("MODEL_BUNDLE_PATH", "models/ann_v1_1.joblib")).resolve()
+MODEL_BUNDLE_SHA256 = "4e8f68f35e0dddd0af85533c835dc573324539d30fb2b1eea94aa98b4970aa55"
+
+# Which concentration model gives the predictions: "ann" (default; the fixed ANN, cannot be trained)
 # or "linear" (the model trained in the app from a CSV or XLSX). Read when a request is handled.
 MODEL_TYPES = ("ann", "linear")
 MODEL_TYPE = os.getenv("MODEL_TYPE", "ann").strip().lower() or "ann"

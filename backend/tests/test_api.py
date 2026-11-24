@@ -33,9 +33,9 @@ def test_health_reports_mongo_cloudinary_and_model(client):
     assert r.json() == {"status": "ok", "mongo": "ok", "cloudinary": "ok", "model_type": "ann", "model": "loaded"}
 
 
-def test_prediction_completes_with_no_model_file_in_ann_mode(client, tmp_path):
+def test_prediction_completes_with_no_linear_model_file_in_ann_mode(client, tmp_path):
     import config
-    assert config.MODEL_TYPE == "ann" and not config.MODEL_DIR.exists()      # the ANN needs no model file
+    assert config.MODEL_TYPE == "ann" and not config.MODEL_DIR.exists()      # no linear model file exists
     png = make_photo_png()
     job_id, job = finished_job(client, upload(client, [("tube.png", png)]))
     assert job["status"] == "done" and job["total"] == 1 and job["processed"] == 1
@@ -45,10 +45,10 @@ def test_prediction_completes_with_no_model_file_in_ann_mode(client, tmp_path):
     assert set(body) == {"job_id", "status", "results"}
     row = body["results"][0]
     assert set(row) == ROW_KEYS and row["status"] == "ok" and row["page"] is None and row["error"] == ""
-    import concentration_ann
-    expected = concentration_ann.predict(row["R"], row["G"])               # the ANN, from the numbers the row shows
+    import ann_v1_1
+    expected = ann_v1_1.predict(row["R"], row["G"])                        # the ANN, from the numbers the row shows
     assert row["predicted_concentration_mg_L"] == expected["predicted_concentration_mg_L"]
-    assert row["expected_error_mg_L"] == 17.78 and row["model_status"] == expected["status"]
+    assert row["expected_error_mg_L"] == ann_v1_1.get()["expected_error_mg_L_test_RMSEP"] and row["model_status"] == expected["status"]
     assert all(w in row["warning"] for w in expected["warnings"])              # the ANN's warnings are the notes
 
     # the same file measured straight with the script: R, G, B are its trimmed means, rounded to 2 decimals

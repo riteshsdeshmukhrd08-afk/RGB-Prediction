@@ -30,7 +30,7 @@ export function CompareResult({ result }) {
   return (
     <div className="compare-result">
       <div className="compare-models">
-        <ModelSummary title={`ANN (${ann.model_version})`} m={ann}
+        <ModelSummary title={ann.available === false ? "ANN" : `ANN (${ann.model_name})`} m={ann}
           note={ann.n_review ? `${ann.n_review} row(s) are "Review": a value is given, but R, G are unusual.` : ""} />
         <ModelSummary title={linear.available ? `Linear (${linear.features.join(", ")})` : "Linear"} m={linear}
           note={linear.available ? "" : "No linear model is trained, so it could not predict any row."} />

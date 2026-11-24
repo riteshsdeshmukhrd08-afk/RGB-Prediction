@@ -119,8 +119,8 @@ export const getTraining = (id, signal) => request(`/api/train/${id}`, { signal 
 export const getCurrentModel = (signal) => request("/api/train/current", { signal });
 export const getCurrentReport = (signal) => request("/api/train/current/report", { signal });
 
-// The active concentration model: { model_type, model_version, features, expected_error_mg_L, trainable }
-export const getModelInfo = (signal) => request("/api/model", { signal, timeoutMs: POLL_TIMEOUT_MS });
+// The active concentration model: { model_type, model_name, features, expected_error_mg_L, trainable }
+export const getModelInfo = (signal) => request("/api/model-info", { signal, timeoutMs: POLL_TIMEOUT_MS });
 
 // Known concentrations (CSV or XLSX) against the ANN and the linear model. Changes neither model.
 export const compareFile = (file, signal) => request("/api/compare", { method: "POST", body: oneFile(file), signal });

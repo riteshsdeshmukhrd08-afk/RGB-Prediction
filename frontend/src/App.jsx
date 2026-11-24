@@ -45,7 +45,7 @@ export default function App() {
     }
   }, []);
 
-  // The active model ({ model_type, model_version, features, expected_error_mg_L, trainable }), shown in the header.
+  // The active model ({ model_type, model_name, features, expected_error_mg_L, trainable }), shown in the header.
   // The Train card is only shown for the linear model. Also called after a training.
   const refreshModel = useCallback(async () => {
     modelCtl.current?.abort();

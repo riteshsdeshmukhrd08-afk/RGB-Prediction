@@ -34,7 +34,7 @@ import db
 import exports
 import compare
 import concentration
-import concentration_ann
+import ann_v1_1
 import imaging
 import measure_service
 import pdf_utils
@@ -58,7 +58,9 @@ async def lifespan(app):
     db.init()
     db.ensure_indexes()
     storage.setup()
-    concentration.load_model()      # the concentration model is read here (it is optional)
+    concentration.load_model()      # the linear model is read here (it is optional)
+    if config.MODEL_TYPE == "ann":
+        ann_v1_1.load()             # the ANN file of the repository: checked against its pinned SHA-256, then loaded once
     if db.is_configured():
         try:
             training.fail_stale_jobs()
@@ -306,8 +308,11 @@ def health():
     else:
         ok, reason = db.ping()
     out = {"status": "ok", "mongo": "ok" if ok else "error", "cloudinary": storage.check(),
-           "model_type": config.MODEL_TYPE,
-           "model": "loaded" if (config.MODEL_TYPE == "ann" or concentration.is_ready()) else "missing"}
+           "model_type": config.MODEL_TYPE}
+    if config.MODEL_TYPE == "ann":
+        out.update(ann_v1_1.status())                   # {"model": "loaded"} or {"model": "unavailable", "model_error": reason}
+    else:
+        out["model"] = "loaded" if concentration.is_ready() else "missing"
     if not ok:
         out["mongo_error"] = reason
     return out
@@ -322,8 +327,10 @@ def create_job(background_tasks: BackgroundTasks, files: list[UploadFile] = File
         again = existing_job_response(key)
         if again is not None:
             return again
+    model_type = config.MODEL_TYPE                      # the job keeps this choice
+    if model_type == "ann" and not ann_v1_1.is_loaded():
+        raise HTTPException(503, "The ANN model is not available: " + ann_v1_1.status()["model_error"])
     model, _ = concentration.current()                  # the linear model: none is fine, R, G, B are always returned
-    model_type = config.MODEL_TYPE                      # the ANN needs no model file; the job keeps this choice
     if len(files) > config.MAX_FILES:
         raise HTTPException(400, f"Too many files: {len(files)} (limit is {config.MAX_FILES}).")
 
@@ -507,13 +514,16 @@ def get_training(job_id: str):
 # ---------------------------------------------------------------------------
 # Which model is active, and the comparison of the two models (neither is changed by it)
 # ---------------------------------------------------------------------------
-@app.get("/api/model")
+@app.get("/api/model-info")
 def model_info():
-    """The active model: model_type, model_version, features, expected_error_mg_L and trainable."""
+    """The active model: model_type, model_name, features, expected_error_mg_L, nominal range, training_max and trainable."""
     if config.MODEL_TYPE == "ann":
-        return concentration_ann.info()
+        try:
+            return ann_v1_1.info()
+        except ann_v1_1.ModelUnavailable as e:
+            raise HTTPException(503, f"The ANN model is not available: {e}")
     model, version = concentration.current()
-    return {"model_type": "linear", "model_version": version,
+    return {"model_type": "linear", "model_name": "Linear model", "model_version": version,
             "features": list(model["features"]) if model else [],
             "expected_error_mg_L": model["typical_error_ppm"] if model else None, "trainable": True,
             "loaded": model is not None}
